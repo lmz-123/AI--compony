@@ -1,0 +1,14 @@
+{
+  "name": "claudeteam-feishu-channel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClaudeTeam Feishu/Lark Channel sidecar: registerApp QR onboarding + WebSocket event ingress (emits the lark-cli --compact NDJSON shape on stdout for feishu.subscribe.process_lines). Replaces the Playwright bot-creator + `lark-cli event +subscribe`.",
+  "type": "module",
+  "bin": {
+    "feishu-channel": "sidecar.js"
+  },
+  "dependencies": {
+    "@larksuite/channel": "^0.2.3",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

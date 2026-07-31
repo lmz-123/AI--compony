@@ -1,0 +1,44 @@
+# Growth marketing team — growth lead (strategy + dispatch + review) + content + paid media + analytics
+#
+# Usage: copy this folder's contents (this toml + the *.md playbooks) next to your
+#        claudeteam.toml — `playbook` paths resolve relative to the config file.
+#        Tweak cli/model/role/playbook for your project, then
+#        `claudeteam feishu connect` (writes chat_id) → `claudeteam up`.
+# Each playbook becomes its agent's CLAUDE.md / AGENTS.md body, on top of the team protocol.
+
+chat_id       = ""                        # written by `claudeteam feishu connect`
+default_model = "opus"
+
+[team]
+session = "ClaudeTeam"
+
+[team.agents.manager]
+cli        = "claude-code"
+model      = "opus"
+role       = "Growth Lead"
+playbook   = "manager.md"
+card_color = "blue"
+
+[team.agents.content]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Content Strategist"
+playbook   = "content.md"
+card_color = "purple"
+
+[team.agents.ads]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Paid Media Strategist"
+playbook   = "ads.md"
+card_color = "green"
+
+[team.agents.analytics]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Marketing Analyst"
+playbook   = "analytics.md"
+card_color = "orange"
+
+# Other sections ([chat.publish] visibility / [feishu] bridge) default if omitted;
+# see DEPLOYMENT's "Configuration" section to tune them.

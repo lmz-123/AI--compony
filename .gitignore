@@ -1,0 +1,53 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Python venv — per-developer; `pip install -e .` populates this
+.venv/
+
+# macOS noise
+.DS_Store
+
+# runtime state — anchor to repo root so src/claudeteam/agents/ isn't swallowed
+/workspace/
+/agents/
+/projects/
+/share/
+/state/
+# scripts/feishu_channel/ is checked in (the @larksuite/channel sidecar);
+# its own .gitignore handles node_modules. Allow this dir.
+# Watch git status when adding under scripts/ so stray local state
+# files don't sneak in.
+.claude/scheduled_tasks.lock
+# `claudeteam install-hooks` output — regenerated per deploy
+/.claude/commands/
+team.json
+runtime_config.json
+
+# docker compose env (contains secrets) + per-agent CLI credentials
+# (runtime/agent_auth.py reads $CLAUDETEAM_SECRETS_FILE, default <state>/.env).
+# NEVER commit any of these — they hold OAuth tokens / API keys.
+.env
+secrets.env
+*.secrets.env
+/team-data/
+/docker-compose.override.yml
+/server-secrets/
+
+# unrelated tool caches that drift into the repo root
+/.playwright-mcp/
+# claudeteam unified config — per-deploy file, like runtime_config.json
+/claudeteam.toml
+/claudeteam.toml.bak
+AGENTS.md
+
+# Personal dev convenience — operator-specific Makefile + creds helper.
+# Hardcodes a private chat_id / lark profile, so kept out of the open
+# source repo. Use the documented `claudeteam` commands instead.
+/Makefile
+/bin/
+/generated/

@@ -1,0 +1,44 @@
+# Automated research team — research lead (direction + dispatch + vetting) + literature reviewer + data analyst + experiment runner
+#
+# Usage: copy this folder's contents (this toml + the *.md playbooks) next to your
+#        claudeteam.toml — `playbook` paths resolve relative to the config file.
+#        Tweak cli/model/role/playbook for your project, then
+#        `claudeteam feishu connect` (writes chat_id) → `claudeteam up`.
+# Each playbook becomes its agent's CLAUDE.md / AGENTS.md body, on top of the team protocol.
+
+chat_id       = ""                        # written by `claudeteam feishu connect`
+default_model = "opus"
+
+[team]
+session = "ClaudeTeam"
+
+[team.agents.manager]
+cli        = "claude-code"
+model      = "opus"
+role       = "Research Lead"
+playbook   = "manager.md"
+card_color = "blue"
+
+[team.agents.lit_reviewer]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Literature Reviewer"
+playbook   = "lit_reviewer.md"
+card_color = "purple"
+
+[team.agents.data_analyst]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Data Analyst"
+playbook   = "data_analyst.md"
+card_color = "green"
+
+[team.agents.experimenter]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Experiment Runner"
+playbook   = "experimenter.md"
+card_color = "orange"
+
+# Other sections ([chat.publish] visibility / [feishu] bridge) default if omitted;
+# see DEPLOYMENT's "Configuration" section to tune them.

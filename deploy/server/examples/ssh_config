@@ -1,0 +1,10 @@
+Host production-example
+    HostName 192.0.2.10
+    User deploy
+    Port 22
+    IdentityFile ~/.ssh/deployer_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile ~/.ssh/known_hosts
+    ServerAliveInterval 30
+    ServerAliveCountMax 3

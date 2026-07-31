@@ -1,0 +1,20 @@
+version = 1
+
+[policy]
+require_explicit_production_approval = true
+projects_root = "/workspace/projects"
+
+[[targets]]
+name = "example-production"
+environment = "production"
+ssh_alias = "production-example"
+base_dir = "/srv/apps"
+
+[[targets.projects]]
+name = "example-api"
+repository = "git@github.com:example/example-api.git"
+directory = "/srv/apps/example-api"
+branch = "main"
+deploy_command = "docker compose up -d --build"
+healthcheck_command = "docker compose ps"
+rollback_command = "git checkout <previous-commit> && docker compose up -d --build"

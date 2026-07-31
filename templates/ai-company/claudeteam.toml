@@ -1,0 +1,45 @@
+# AI company: requirement manager + developer + deployment engineer.
+# Copy this whole directory into the deployment data directory, then fill chat_id.
+
+chat_id       = ""
+default_model = "gpt-5.6-sol"
+
+[team]
+session = "AI-Company"
+
+[team.agents.manager]
+cli        = "codex-cli"
+model      = "gpt-5.6-sol"
+role       = "主管：需求分析、任务拆解、调度与验收"
+specialty  = ["需求分析", "任务拆解", "风险判断", "交付验收"]
+playbook   = "manager.md"
+card_color = "blue"
+
+[team.agents.developer]
+cli        = "codex-cli"
+model      = "gpt-5.6-sol"
+role       = "开发员工：代码实现、测试与技术文档"
+specialty  = ["代码实现", "自动化测试", "代码审查", "故障修复"]
+playbook   = "developer.md"
+card_color = "purple"
+
+[team.agents.deployer]
+cli        = "codex-cli"
+model      = "gpt-5.6-sol"
+role       = "部署员工：通过 SSH 执行受控部署、验证与回滚"
+specialty  = ["Git 部署", "Docker Compose", "健康检查", "回滚"]
+playbook   = "deployer.md"
+card_color = "green"
+
+[chat.publish]
+user_to_manager   = "always"
+manager_to_user   = "always"
+manager_to_worker = true
+worker_to_manager = true
+worker_to_user    = true
+worker_to_worker  = true
+
+[feishu]
+send_as          = "bot"
+no_proxy         = true
+broadcast_tokens = ["@team", "@all", "@everyone"]

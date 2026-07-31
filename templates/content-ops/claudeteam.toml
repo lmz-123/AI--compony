@@ -1,0 +1,44 @@
+# Content operations team — content lead (plan + dispatch + review) + writer + editor + SEO
+#
+# Usage: copy this folder's contents (this toml + the *.md playbooks) next to your
+#        claudeteam.toml — `playbook` paths resolve relative to the config file.
+#        Tweak cli/model/role/playbook for your project, then
+#        `claudeteam feishu connect` (writes chat_id) → `claudeteam up`.
+# Each playbook becomes its agent's CLAUDE.md / AGENTS.md body, on top of the team protocol.
+
+chat_id       = ""                        # written by `claudeteam feishu connect`
+default_model = "opus"
+
+[team]
+session = "ClaudeTeam"
+
+[team.agents.manager]
+cli        = "claude-code"
+model      = "opus"
+role       = "Content Lead"
+playbook   = "manager.md"
+card_color = "blue"
+
+[team.agents.writer]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Writer"
+playbook   = "writer.md"
+card_color = "green"
+
+[team.agents.editor]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "Editor"
+playbook   = "editor.md"
+card_color = "purple"
+
+[team.agents.seo]
+cli        = "claude-code"
+model      = "sonnet"
+role       = "SEO Specialist"
+playbook   = "seo.md"
+card_color = "orange"
+
+# Other sections ([chat.publish] visibility / [feishu] bridge) default if omitted;
+# see DEPLOYMENT's "Configuration" section to tune them.

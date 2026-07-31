@@ -1,0 +1,88 @@
+# Minimum-viable compose for ClaudeTeam.
+#
+# Mounts a host `./team-data/` directory into /data so claudeteam.toml
+# and the state dir survive `docker compose down`.
+# Mounts the host's lark-cli OAuth profile so `claudeteam say`/`router`
+# don't need a fresh authentication round inside the container.
+#
+# Usage:
+#   docker compose build && docker compose up -d            # build image + start
+#   docker compose exec --workdir /data claudeteam claudeteam init  # bootstrap → /data/claudeteam.toml
+#   docker compose exec claudeteam claudeteam up            # spawn the crew
+#   docker compose exec claudeteam claudeteam health
+#
+# Network: host mode lets lark-cli's long-poll reach Feishu without
+# NAT timeouts. On Docker Desktop (macOS/Windows) host mode is partially
+# emulated — switch to a bridge port-publish if the long-poll dies.
+
+services:
+  claudeteam:
+    build: .
+    image: claudeteam:dev
+    # tini as PID 1 reaps orphaned <defunct> lark-cli/claudeteam zombies
+    # left by router self-respawn churn (macOS WS silent-drop loop).
+    # Without a reaper, PID 1 (`sleep infinity`) never wait()s them.
+    init: true
+    volumes:
+      # NOTE: every host path below must already exist before `up -d` — Docker
+      # turns a missing *file* source into a directory and the app then breaks.
+      # Delete any mount for a CLI you don't run. See docs/DEPLOYMENT.md.
+      # Bind-mount source RW so Python edits hot-reload without
+      # `docker compose build`. Only rebuild for Dockerfile / deps
+      # changes. RW (not :ro) because pip's `*.egg-info` writes into
+      # src/ on first install.
+      - ./src:/app/src
+      - ./team-data:/data
+      # Share the host's lark-cli OAuth profile (config.json + cache)
+      # but keep the per-app fcntl lock dir container-private. Sharing
+      # the lock dir would let a host router + container router race
+      # for the same lock and one would misreport "another instance
+      # running"; keeping locks/ inside the container avoids that.
+      - ${HOME}/.lark-cli/config.json:/root/.lark-cli/config.json
+      - ${HOME}/.lark-cli/cache:/root/.lark-cli/cache
+      # Bind-mount host's claude OAuth so the container reuses it
+      # without an interactive login. On macOS the .credentials.json
+      # file actually lives in keychain — extract once with:
+      #   security find-generic-password -s "Claude Code-credentials" -w \
+      #     > ~/.claude/.credentials.json
+      # before `docker compose up`. RW so token refresh persists back.
+      - ${HOME}/.claude/.credentials.json:/root/.claude/.credentials.json
+      # Read-only mount of host's ~/.claude.json at a side path. Each
+      # agent pane seeds a per-agent copy from this so multiple panes
+      # don't race on writes to the same file (which corrupts JSON).
+      - ${HOME}/.claude.json:/root/host-claude.json:ro
+      # Claude projects/ shared so ccusage finds the usage logs that
+      # the /usage card depends on.
+      - ${HOME}/.claude/projects:/root/.claude/projects
+      # Codex + Kimi credentials so the agent CLIs (and /usage card)
+      # don't need to re-login inside the container. Token refreshes
+      # written in-container persist back to host.
+      - ${HOME}/.codex:/root/.codex
+      - ${HOME}/.kimi:/root/.kimi
+    # Credentials come from `.env` (gitignored). FEISHU_APP_* and
+    # LARKSUITE_CLI_APP_* are aliases — set both. ANTHROPIC_API_KEY is
+    # optional; without it claude uses the bind-mounted host OAuth.
+    environment:
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-}
+      - LARKSUITE_CLI_APP_SECRET=${LARKSUITE_CLI_APP_SECRET:-}
+      - FEISHU_APP_ID=${FEISHU_APP_ID:-}
+      - LARKSUITE_CLI_APP_ID=${LARKSUITE_CLI_APP_ID:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Container deploys typically only have bot OAuth (via app_secret
+      # → tenant_token), not user OAuth. Pin send_as=bot so catchup /
+      # say / slash all use bot identity. Override with `user` only
+      # if you've run `lark-cli auth login` inside the container.
+      - CLAUDETEAM_LARK_SEND_AS=${CLAUDETEAM_LARK_SEND_AS:-bot}
+      # macOS Docker Desktop's `network_mode: host` is only partially
+      # emulated and the lark-cli WebSocket goes silent after a few
+      # minutes — set CLAUDETEAM_ROUTER_STALE_S in .env (suggested 300)
+      # to make the router respawn faster on this OS. Linux ignores.
+      - CLAUDETEAM_ROUTER_STALE_S=${CLAUDETEAM_ROUTER_STALE_S:-}
+    network_mode: host
+    tty: true
+    stdin_open: true
+    # Keep the container alive so `docker compose exec` works without
+    # auto-restart loops. Operator-driven lifecycle: `claudeteam up`
+    # starts tmux + daemons inside; `claudeteam down` stops them; the
+    # container itself stays around until `docker compose down`.
+    command: ["sleep", "infinity"]
