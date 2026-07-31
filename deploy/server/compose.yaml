@@ -2,6 +2,7 @@ services:
   claudeteam:
     build:
       context: ../..
+      dockerfile: deploy/server/Dockerfile
     image: ai-company:local
     init: true
     restart: unless-stopped

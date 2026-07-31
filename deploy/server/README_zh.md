@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer` 三个 Codex agent。宿主机不需要安装 Codex；镜像构建时已经安装 Codex CLI，运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer` 三个 Codex agent。宿主机不需要安装 Codex；`deploy/server/Dockerfile` 只安装 Codex CLI、飞书 sidecar、tmux 和 SSH 客户端，不构建当前团队用不到的其它 agent CLI。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
 
 ## 目录初始化
 
