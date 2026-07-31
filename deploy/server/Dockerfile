@@ -43,6 +43,7 @@ RUN cd scripts/feishu_channel \
     && npm install --omit=dev --silent --no-fund --no-audit
 
 COPY templates/ ./templates/
+COPY skills/ ./skills/
 
 ENV CLAUDETEAM_STATE_DIR=/data/state \
     CLAUDETEAM_CONFIG_FILE=/data/claudeteam.toml \

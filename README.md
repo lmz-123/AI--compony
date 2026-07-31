@@ -85,14 +85,16 @@ real signal is the manager's roll-call.
 
 ### AI company server profile
 
-This fork includes a production-oriented three-agent profile: a requirement
-manager, a developer, and an SSH deployment engineer. The server image installs
+This fork includes a production-oriented four-agent profile: a requirement
+manager, a developer, an SSH deployment engineer, and a read-only operations
+debugger. The server image installs
 Codex CLI itself, so the host only needs Docker; agents authenticate to a remote
 Responses-compatible gateway with a gitignored API key.
 
 - Team template: [`templates/ai-company/`](templates/ai-company/)
 - Chinese server guide: [`deploy/server/README_zh.md`](deploy/server/README_zh.md)
 - Hardened server Compose: [`deploy/server/compose.yaml`](deploy/server/compose.yaml)
+- TripCanvas incident skill: [`skills/debug-tripcanvas/`](skills/debug-tripcanvas/)
 
 ---
 

@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer` 三个 Codex agent。宿主机不需要安装 Codex；`deploy/server/Dockerfile` 只安装 Codex CLI、飞书 sidecar、tmux 和 SSH 客户端，不构建当前团队用不到的其它 agent CLI。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`ops` 默认只读，负责容器、日志、主机资源、PostgreSQL、Redis 和可选阿里云 SLS 排障，并在修复发布后复验。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障 skill。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
 
 ## 目录初始化
 
@@ -11,6 +11,7 @@ mkdir -p team-data/state projects server-secrets/codex server-secrets/ssh
 cp -R templates/ai-company/. team-data/
 cp deploy/server/examples/codex-config.toml server-secrets/codex/config.toml
 cp deploy/server/examples/deploy-targets.toml team-data/deploy-targets.toml
+cp deploy/server/examples/ops-targets.toml team-data/ops-targets.toml
 cp deploy/server/examples/ssh_config server-secrets/ssh/config
 chmod 700 server-secrets/ssh server-secrets/codex
 chmod 600 server-secrets/codex/config.toml server-secrets/ssh/config
@@ -34,7 +35,7 @@ chmod 600 team-data/state/.env team-data/state/feishu_app.json
 
 不要把这个文件、`team-data/` 或 `server-secrets/` 加入 Git。Codex 自定义 provider 位于 `server-secrets/codex/config.toml`；默认示例使用 `https://xiaoxin8.com` 和 Responses API。
 
-容器启动时会从该 `.env` 自动生成 Codex 所需的临时 `/root/.codex/auth.json`，再把它共享给三个隔离的 agent HOME。无需在服务器交互执行 `codex login`；更换 Key 后重启容器即可。
+容器启动时会从该 `.env` 自动生成 Codex 所需的临时 `/root/.codex/auth.json`，再把它共享给四个隔离的 agent HOME。无需在服务器交互执行 `codex login`；更换 Key 后重启容器即可。
 
 ## 部署 SSH
 
@@ -49,6 +50,30 @@ chmod 600 server-secrets/ssh/deployer_ed25519 server-secrets/ssh/known_hosts
 
 编辑 `team-data/deploy-targets.toml`，只登记允许操作的服务器、仓库、目录和命令。目标服务器本身应配置 GitHub Deploy Key，部署容器不需要持有各项目的 GitHub 私钥。
 
+## 智能运维排障
+
+`team-data/ops-targets.toml` 是运维员工唯一可信的诊断目标清单。仓库示例已经登记当前 TripCanvas 生产拓扑：
+
+- SSH 别名：`local-production`
+- 项目目录：`/srv/apps/MyAPPs`
+- Compose：`tripcanvas-backend/docker-compose.yml`
+- 服务：`api`、`worker`、`db`、`redis`
+- 健康检查：`http://127.0.0.1:8000/health`
+
+确认这些值与服务器实际情况一致。`ops` 通过已有的 `/root/.ssh/config` 和只读挂载的密钥登录目标；对应 SSH 用户至少需要读取项目、执行该 Compose 项目状态和日志查询，以及在需要时执行数据库/Redis 只读探测的权限。不要给它数据库写权限，也不要把 Docker Socket 挂进 AI Company 容器。
+
+阿里云 SLS 默认关闭：
+
+```toml
+[sls]
+enabled = false
+profile = "tripcanvas-sls"
+project = ""
+logstore = ""
+```
+
+只有确实使用 SLS 时才改为 `true` 并填写资源名。AK/SK 只能通过服务器上的合规 Aliyun CLI profile 提供，禁止写入 Git、`ops-targets.toml`、群消息或日志。当前镜像不默认安装 Aliyun CLI；未启用 SLS 不影响 Docker、PostgreSQL 和 Redis 排障。
+
 ## 启动与验证
 
 迁移前先在旧机器运行 `claudeteam down`，同一个飞书 App 不允许两套 router 并行订阅。
@@ -60,7 +85,47 @@ docker compose -f deploy/server/compose.yaml exec claudeteam claudeteam team
 docker compose -f deploy/server/compose.yaml logs --tail=100 claudeteam
 ```
 
-随后在飞书群发送 `/team`，再发一条普通任务，确认主管、开发员工和部署员工均完成点名。容器设置了 `restart: unless-stopped`，服务器重启后会自动恢复团队。
+随后在飞书群发送 `/team`，再发一条普通任务，确认主管、开发员工、部署员工和智能运维员工均完成点名。容器设置了 `restart: unless-stopped`，服务器重启后会自动恢复团队。
+
+## 已部署三人团队升级为四人团队
+
+`team-data/` 是持久化目录，`git pull` 不会自动覆盖其中真实的 `chat_id` 和 playbook。更新代码后，在 `/root/AI--compony` 执行：
+
+```bash
+git pull --ff-only origin main
+
+cp templates/ai-company/manager.md team-data/manager.md
+cp templates/ai-company/developer.md team-data/developer.md
+cp templates/ai-company/deployer.md team-data/deployer.md
+cp templates/ai-company/ops.md team-data/ops.md
+cp deploy/server/examples/ops-targets.toml team-data/ops-targets.toml
+```
+
+如果服务器仓库使用其他远程名，先用 `git remote -v` 确认后替换 `origin`。然后编辑 `team-data/claudeteam.toml`，保留原有真实 `chat_id`，在 `[team.agents.deployer]` 后加入：
+
+```toml
+[team.agents.ops]
+cli        = "codex-cli"
+model      = "gpt-5.6-sol"
+role       = "智能运维员工：只读排障、日志与存储分析、根因定位及上线复验"
+specialty  = ["故障诊断", "日志分析", "PostgreSQL", "Redis", "Docker Compose", "阿里云 SLS"]
+playbook   = "ops.md"
+card_color = "orange"
+```
+
+重新构建并强制重建容器，让镜像包含新 skill：
+
+```bash
+docker compose -f deploy/server/compose.yaml up -d --build --force-recreate
+docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam health
+docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam team
+```
+
+在飞书群发送 `/team`，确认出现 `manager`、`developer`、`deployer`、`ops`。再发送：
+
+```text
+请让 ops 对 TripCanvas 做一次只读健康巡检，只汇报版本、Compose 状态、健康接口和最近 15 分钟错误摘要，不做任何修改。
+```
 
 ## 推荐任务格式
 
@@ -74,4 +139,9 @@ docker compose -f deploy/server/compose.yaml logs --tail=100 claudeteam
 ```text
 请把 <project> 的 <commit> 部署到 deploy-targets.toml 中的 <target>。
 执行部署和健康检查，失败时按清单回滚并汇报证据。
+```
+
+```text
+TripCanvas 出现 <症状>，发生时间约 <时间和时区>，关联 request_id/trace_id 是 <ID，如有>。
+请主管先安排 ops 只读排障；若确认是代码问题，再安排 developer 修复和测试。未经我本次明确确认，不要部署。
 ```

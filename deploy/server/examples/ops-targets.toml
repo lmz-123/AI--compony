@@ -1,0 +1,28 @@
+version = 1
+
+[project]
+name = "TripCanvas"
+environment = "production"
+ssh_alias = "local-production"
+repository = "git@github.com:lmz-123/MyAPPs.git"
+repo_dir = "/srv/apps/MyAPPs"
+branch = "main"
+compose_file = "tripcanvas-backend/docker-compose.yml"
+health_url = "http://127.0.0.1:8000/health"
+log_services = ["api", "worker"]
+
+[postgres]
+enabled = true
+service = "db"
+database = "tripcanvas"
+user = "tripcanvas"
+
+[redis]
+enabled = true
+service = "redis"
+
+[sls]
+enabled = false
+profile = "tripcanvas-sls"
+project = ""
+logstore = ""

@@ -36,7 +36,7 @@ content; the say/send/memory mechanics are added automatically.
 | [`marketing-growth/`](marketing-growth/) | Growth Lead + Content Strategist + Paid Media Strategist + Marketing Analyst |
 | [`data-analysis/`](data-analysis/) | Analytics Lead + Data Engineer + Data Analyst + Reporting & Viz |
 | [`content-ops/`](content-ops/) | Content Lead + Writer + Editor + SEO Specialist |
-| [`ai-company/`](ai-company/) | Requirement Manager + Developer + Deployment Engineer |
+| [`ai-company/`](ai-company/) | Requirement Manager + Developer + Deployment Engineer + Operations Debugger |
 
 Need a different domain? Write your own (next section) — it's just a toml + a few `.md` files.
 

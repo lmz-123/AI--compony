@@ -1,0 +1,4 @@
+interface:
+  display_name: "TripCanvas 智能运维排障"
+  short_description: "诊断日志、容器、PostgreSQL、Redis 与阿里云 SLS 问题"
+  default_prompt: "Use $debug-tripcanvas to diagnose this TripCanvas production issue and produce an evidence-based handoff."

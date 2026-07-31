@@ -7,5 +7,6 @@
 |---|---|---|
 | [verify-status](verify-status/SKILL.md) | 确认员工在不在线、在不在岗：拉整段 pane 实录 LLM 通读判断；部署后必跑（一票否决，失败提示登录），平时怀疑掉线单点复用 | 部署 agent / manager |
 | [reflect](reflect/SKILL.md) | 反思并收拾团队共享经验库：通读 → 合并重复 → 退役过时 → 把全队通用的提为置顶 | manager / 任意 agent 周期性跑 |
+| [debug-tripcanvas](debug-tripcanvas/SKILL.md) | 只读诊断 TripCanvas 的容器、日志、主机资源、PostgreSQL、Redis 和可选阿里云 SLS，并生成开发修复与上线复验交接 | ops / manager |
 
 > 已有方案待落地（见 expert-skills-proposal.md，等老板拍板）：patrol（主管巡视）。
