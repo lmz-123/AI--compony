@@ -10,7 +10,7 @@ services:
       - ../../src:/app/src:ro
       - ../../team-data:/data
       - ../../projects:/workspace/projects
-      - ../../server-secrets/codex:/root/.codex:ro
+      - ../../server-secrets/codex/config.toml:/root/.codex/config.toml:ro
       - ../../server-secrets/ssh:/root/.ssh:ro
       - ./entrypoint.sh:/opt/ai-company/entrypoint.sh:ro
     environment:

@@ -34,6 +34,8 @@ chmod 600 team-data/state/.env team-data/state/feishu_app.json
 
 不要把这个文件、`team-data/` 或 `server-secrets/` 加入 Git。Codex 自定义 provider 位于 `server-secrets/codex/config.toml`；默认示例使用 `https://xiaoxin8.com` 和 Responses API。
 
+容器启动时会从该 `.env` 自动生成 Codex 所需的临时 `/root/.codex/auth.json`，再把它共享给三个隔离的 agent HOME。无需在服务器交互执行 `codex login`；更换 Key 后重启容器即可。
+
 ## 部署 SSH
 
 为部署员工创建权限受限的专用 SSH Key。私钥保存为 `server-secrets/ssh/deployer_ed25519`，公钥安装到目标服务器的 `deploy` 用户。不要复用 root 私钥。
