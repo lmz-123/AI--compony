@@ -18,9 +18,8 @@ card_color = "blue"
 
 [team.agents.developer]
 cli        = "codex-cli"
-model      = "gpt-5.6-sol"
+model      = "gpt-5.6-terra"
 reasoning_effort = "high"
-lazy       = true
 role       = "开发员工：代码实现、测试与技术文档"
 specialty  = ["代码实现", "自动化测试", "代码审查", "故障修复", "Android 构建"]
 playbook   = "developer.md"
@@ -30,7 +29,6 @@ card_color = "purple"
 cli        = "codex-cli"
 model      = "gpt-5.6-terra"
 reasoning_effort = "low"
-lazy       = true
 role       = "部署员工：通过 SSH 执行受控部署、验证与回滚"
 specialty  = ["Git 部署", "Docker Compose", "健康检查", "回滚"]
 playbook   = "deployer.md"
@@ -40,7 +38,6 @@ card_color = "green"
 cli        = "codex-cli"
 model      = "gpt-5.6-terra"
 reasoning_effort = "low"
-lazy       = true
 role       = "智能运维员工：日志优先的只读排障、运行检查与例行构建"
 specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS", "Android debug 构建"]
 playbook   = "ops.md"

@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`developer` 使用高能力模型；其余角色使用较低成本模型和较低推理强度。三个员工默认懒启动，只有主管实际派单时才启动对应 CLI。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。四个角色统一使用 `gpt-5.6-terra`；开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
 
 ## 目录初始化
 
@@ -154,7 +154,6 @@ mkdir -p team-data/artifacts
 cli        = "codex-cli"
 model      = "gpt-5.6-terra"
 reasoning_effort = "low"
-lazy       = true
 role       = "智能运维员工：日志优先的只读排障、运行检查与例行构建"
 specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS", "Android debug 构建"]
 playbook   = "ops.md"
