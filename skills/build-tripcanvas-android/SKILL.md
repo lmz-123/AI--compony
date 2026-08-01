@@ -19,9 +19,9 @@ Use the bundled runner instead of manually composing GitHub API calls. It keeps 
 
 ## Build Workflow
 
-1. Confirm build type, output format, ref, API base URL, whether `AMAP_ANDROID_KEY` is configured in GitHub, and whether this is a test or release delivery.
-2. For code changes, complete tests and push the requested ref before building.
-3. Run a dry validation first:
+1. For an ordinary request, use the configured defaults: `main`, `debug`, `apk`, and the API URL from `/data/build-targets.toml`. Ask follow-up questions only when the user requests a different value or a release.
+2. For code changes, complete relevant tests and push the requested ref before building. If no code change is requested, `ops` may run this workflow alone.
+3. Use dry validation only while changing setup or diagnosing configuration:
 
 ```bash
 python /app/skills/build-tripcanvas-android/scripts/build_android.py \
@@ -33,7 +33,7 @@ python /app/skills/build-tripcanvas-android/scripts/build_android.py \
   --dry-run
 ```
 
-4. Trigger, wait, download, verify, and send the APK:
+4. For a routine build, directly trigger, wait, download, verify, and deliver the APK:
 
 ```bash
 python /app/skills/build-tripcanvas-android/scripts/build_android.py \
@@ -47,7 +47,7 @@ python /app/skills/build-tripcanvas-android/scripts/build_android.py \
 
 Use the real URL from `/data/build-targets.toml` or the manager's task. Never copy the example URL.
 
-## Verification
+## Deterministic Verification
 
 The runner must verify all of the following before delivery:
 
@@ -58,10 +58,10 @@ The runner must verify all of the following before delivery:
 - the package SHA256 matches the manifest;
 - the manifest records commit, version, build type, format, and embedded API URL.
 
-Report the workflow URL, immutable commit, app version, filename, size, SHA256, build type, API URL, and Feishu delivery result. Do not claim completion when the build passed but file delivery failed.
+These runner checks do not call a model and should remain enabled. Report only the download/delivery result, workflow URL, filename, size, and SHA256; include other manifest fields only when requested or troubleshooting. Do not ask another agent to re-verify a successful delivery.
 
 ## Failure Handoff
 
-On a build failure, preserve the GitHub run URL and sanitized failing step summary. Send those facts to `manager`; the manager may assign `ops` to diagnose environment/dependency failures or `developer` to fix code/test failures. After a fix, start a new request ID and build the new commit rather than reusing an old artifact.
+On a build failure, preserve the GitHub run URL and sanitized failing step summary. Send those facts to `manager`; keep environment/configuration issues with `ops` and assign `developer` only when the failure indicates a code or test defect. Do not involve both by default.
 
 Read [references/configuration.md](references/configuration.md) only when setting up the server, GitHub token, release signing, or Feishu permission.

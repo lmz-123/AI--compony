@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: runtime_snapshot.sh --repo-dir PATH --compose-file PATH [options]
 
-Read-only, bounded TripCanvas runtime snapshot.
+Read-only, bounded TripCanvas log query with optional focused probes.
 
 Options:
   --health-url URL             Local health URL
@@ -97,31 +97,8 @@ section "timestamp"
 date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
 date '+local=%Y-%m-%dT%H:%M:%S%z'
 
-section "version"
-git rev-parse --short=12 HEAD 2>&1 || true
-git status --short --branch --untracked-files=no 2>&1 | head -n 30 || true
-
-section "host"
-uptime 2>&1 || true
-df -hP "$repo_dir" 2>&1 | head -n 5 || true
-if command -v free >/dev/null 2>&1; then
-  free -h 2>&1 | head -n 5 || true
-else
-  vm_stat 2>&1 | head -n 8 || true
-fi
-
-section "compose services"
-docker compose -f "$compose_file" ps 2>&1 | redact || true
-
-section "container resources"
-container_ids=$(docker compose -f "$compose_file" ps -q 2>/dev/null || true)
-if [[ -n "$container_ids" ]]; then
-  # Container IDs contain no whitespace, so intentional word splitting is safe.
-  # shellcheck disable=SC2086
-  docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}' $container_ids 2>&1 | redact || true
-else
-  printf 'No running Compose containers found\n'
-fi
+section "recent application logs"
+docker compose -f "$compose_file" logs --no-color --since "$since" --tail "$log_lines" "${services[@]}" 2>&1 | redact || true
 
 if [[ -n "$health_url" ]]; then
   section "health endpoint"
@@ -132,9 +109,6 @@ if [[ -n "$health_url" ]]; then
     printf 'Skipped: health URL must use localhost or 127.0.0.1\n'
   fi
 fi
-
-section "recent application logs"
-docker compose -f "$compose_file" logs --no-color --since "$since" --tail "$log_lines" "${services[@]}" 2>&1 | redact || true
 
 if [[ -n "$postgres_service" ]]; then
   section "postgres operational state"
@@ -160,5 +134,5 @@ if [[ -n "$redis_service" ]]; then
     | head -n 20 || true
 fi
 
-section "snapshot complete"
-printf 'Read-only first pass complete. Correlate timestamps and run only focused follow-up queries.\n'
+section "query complete"
+printf 'Read-only query complete. Run only the focused follow-up supported by these logs.\n'

@@ -118,6 +118,14 @@ def test_codex_spawn_passes_openai_model_through():
     assert "CODEX_AGENT=worker_codex" in cmd
 
 
+def test_codex_spawn_applies_agent_reasoning_effort():
+    from helpers import attr_patch
+    from claudeteam.runtime import config
+    with attr_patch(config, agent_config=lambda _agent: {"reasoning_effort": "low"}):
+        cmd = CodexCliAdapter().spawn_cmd("worker_codex", "gpt-5.6-terra")
+    assert "--config model_reasoning_effort=low" in cmd
+
+
 def test_codex_spawn_drops_non_openai_model():
     cmd = CodexCliAdapter().spawn_cmd("worker_codex", "sonnet")
     assert "--model" not in cmd  # silently dropped
@@ -267,5 +275,3 @@ def test_ensure_workdir_trusted_idempotent_when_entry_exists():
         ensure_workdir_trusted(Path("/already/here"), config_path=cfg)
         # File unchanged
         assert cfg.read_text(encoding="utf-8") == original
-
-

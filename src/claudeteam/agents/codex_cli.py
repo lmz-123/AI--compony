@@ -42,6 +42,7 @@ def ensure_workdir_trusted(workdir: Path,
 
 
 _OPENAI_PREFIXES = ("gpt-", "o1", "o3", "o4", "codex")
+_REASONING_EFFORTS = {"low", "medium", "high", "xhigh"}
 
 
 class CodexCliAdapter(CliAdapter):
@@ -49,6 +50,16 @@ class CodexCliAdapter(CliAdapter):
         args = ["--dangerously-bypass-approvals-and-sandbox"]
         if model and any(model.startswith(p) for p in _OPENAI_PREFIXES):
             args += ["--model", model]
+        # Team profiles may lower reasoning independently of the model. Use a
+        # CLI override so existing per-agent CODEX_HOME configs also pick up
+        # the new value after a container restart.
+        try:
+            from claudeteam.runtime import config
+            effort = str(config.agent_config(agent).get("reasoning_effort", "")).strip()
+        except (KeyError, OSError):
+            effort = ""
+        if effort in _REASONING_EFFORTS:
+            args += ["--config", f"model_reasoning_effort={effort}"]
         quoted = " ".join(shlex.quote(a) for a in args)
         return (f"CODEX_HOME={shlex.quote(codex_home(agent))} "
                 f"CODEX_AGENT={shlex.quote(agent)} codex {quoted}")

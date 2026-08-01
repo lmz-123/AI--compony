@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`ops` 默认只读，负责容器、日志、主机资源、PostgreSQL、Redis 和可选阿里云 SLS 排障，并在修复发布后复验。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`developer` 使用高能力模型；其余角色使用较低成本模型和较低推理强度。三个员工默认懒启动，只有主管实际派单时才启动对应 CLI。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
 
 ## 目录初始化
 
@@ -90,7 +90,7 @@ default_api_base_url = "https://你的TripCanvas接口域名"
 
 飞书机器人还需要 `im:resource` 权限。进入当前机器人的飞书开放平台控制台，添加“获取与上传图片或文件资源”权限，创建新版本并发布/批准。旧版本不重新发布，文件上传不会生效。
 
-首次先验证白名单，不触发真实构建：
+需要检查配置时可运行 dry-run；常规 debug 构建无需先执行这一步：
 
 ```bash
 docker compose -f deploy/server/compose.yaml exec -T claudeteam \
@@ -152,9 +152,11 @@ mkdir -p team-data/artifacts
 ```toml
 [team.agents.ops]
 cli        = "codex-cli"
-model      = "gpt-5.6-sol"
-role       = "智能运维员工：只读排障、日志与存储分析、根因定位及上线复验"
-specialty  = ["故障诊断", "日志分析", "PostgreSQL", "Redis", "Docker Compose", "阿里云 SLS"]
+model      = "gpt-5.6-terra"
+reasoning_effort = "low"
+lazy       = true
+role       = "智能运维员工：日志优先的只读排障、运行检查与例行构建"
+specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS", "Android debug 构建"]
 playbook   = "ops.md"
 card_color = "orange"
 ```
@@ -170,7 +172,7 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam team
 在飞书群发送 `/team`，确认出现 `manager`、`developer`、`deployer`、`ops`。再发送：
 
 ```text
-请让 ops 对 TripCanvas 做一次只读健康巡检，只汇报版本、Compose 状态、健康接口和最近 15 分钟错误摘要，不做任何修改。
+请让 ops 查看 TripCanvas api 最近 15 分钟错误日志；只有日志指向具体组件时才继续做对应只读检查，不做全量巡检或任何修改。
 ```
 
 ## 推荐任务格式
