@@ -95,6 +95,7 @@ Responses-compatible gateway with a gitignored API key.
 - Chinese server guide: [`deploy/server/README_zh.md`](deploy/server/README_zh.md)
 - Hardened server Compose: [`deploy/server/compose.yaml`](deploy/server/compose.yaml)
 - TripCanvas incident skill: [`skills/debug-tripcanvas/`](skills/debug-tripcanvas/)
+- TripCanvas Android build skill: [`skills/build-tripcanvas-android/`](skills/build-tripcanvas-android/)
 
 ---
 

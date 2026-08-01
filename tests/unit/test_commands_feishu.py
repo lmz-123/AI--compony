@@ -205,6 +205,10 @@ def test_feishu_unknown_subcommand_errors():
     assert "unknown feishu subcommand" in err
 
 
+def test_connect_permission_link_includes_file_resource_scope():
+    assert "im:resource" in feishu._DEEPLINK_SCOPES
+
+
 # ── default: browser-automated self-built app + graceful fallback ─────────────
 
 
@@ -260,3 +264,38 @@ def test_run_bot_creator_returns_none_when_creator_absent():
     with isolated_env(), env_patch(CLAUDETEAM_FEISHU_CREATOR_DIR="/no/such/dir"):
         with contextlib.redirect_stdout(io.StringIO()):
             assert feishu._run_bot_creator("ClaudeTeam", "feishu") is None
+
+
+# ── artifact send ────────────────────────────────────────────────────────────
+
+
+def test_send_file_accepts_only_configured_artifact_directory():
+    calls = []
+    with isolated_env(runtime_config={"chat_id": "oc_x"}) as tmp:
+        artifact_dir = tmp / "artifacts"
+        artifact_dir.mkdir()
+        package = artifact_dir / "TripCanvas-debug.apk"
+        package.write_bytes(b"apk")
+
+        def sidecar(mode, *, extra_env=None):
+            calls.append((mode, extra_env))
+            return {"event": "file_sent", "message_id": "om_x"}
+
+        with env_patch(CLAUDETEAM_ARTIFACT_DIR=str(artifact_dir)), \
+                attr_patch(lark, subprocess_env=lambda: {
+                    "FEISHU_APP_ID": "cli_x", "FEISHU_APP_SECRET": "secret"}):
+            rc = feishu._send_file([str(package)], run_sidecar=sidecar)
+        assert rc == 0
+        assert calls[0][0] == "send-file"
+        assert calls[0][1]["FEISHU_FILE_PATH"] == str(package.resolve())
+
+
+def test_send_file_rejects_path_outside_artifact_directory():
+    with isolated_env(runtime_config={"chat_id": "oc_x"}) as tmp:
+        artifact_dir = tmp / "artifacts"
+        artifact_dir.mkdir()
+        outside = tmp / "secret.txt"
+        outside.write_text("do not send", encoding="utf-8")
+        with env_patch(CLAUDETEAM_ARTIFACT_DIR=str(artifact_dir)):
+            rc = feishu._send_file([str(outside)], run_sidecar=lambda *a, **k: {})
+        assert rc != 0

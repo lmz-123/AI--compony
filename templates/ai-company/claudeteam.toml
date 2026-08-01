@@ -19,7 +19,7 @@ card_color = "blue"
 cli        = "codex-cli"
 model      = "gpt-5.6-sol"
 role       = "开发员工：代码实现、测试与技术文档"
-specialty  = ["代码实现", "自动化测试", "代码审查", "故障修复"]
+specialty  = ["代码实现", "自动化测试", "代码审查", "故障修复", "Android 构建"]
 playbook   = "developer.md"
 card_color = "purple"
 

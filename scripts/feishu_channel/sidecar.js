@@ -25,6 +25,7 @@
 import { registerApp, createLarkChannel, LarkChannelError } from "@larksuite/channel";
 import qrcode from "qrcode-terminal";
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 const log = (...a) => process.stderr.write(a.join(" ") + "\n");
 const emit = (o) => process.stdout.write(JSON.stringify(o) + "\n");
@@ -74,6 +75,7 @@ const TENANT_SCOPES = [
   "im:message.group_at_msg:readonly",
   "im:message.p2p_msg:readonly",
   "im:chat",
+  "im:resource",
   "application:application:self_manage",
 ];
 const TENANT_EVENTS = ["im.message.receive_v1"];
@@ -187,6 +189,31 @@ async function doSend() {
   emit({ event: "sent", message_id: res.data?.message_id ?? null, chat_id: chatId || null });
 }
 
+// ── send-file: upload one allowlisted local artifact and post it to the team
+// chat. The Channel SDK resolves symlinks and re-checks allowedFileDirs before
+// reading, so a path that escapes /data/artifacts is rejected. ────────────────
+async function doSendFile() {
+  const { appId, appSecret } = appCreds();
+  const chatId = process.env.FEISHU_CHAT_ID || "";
+  const filePath = process.env.FEISHU_FILE_PATH || "";
+  const fileName = process.env.FEISHU_FILE_NAME || path.basename(filePath);
+  const artifactDir = process.env.CLAUDETEAM_ARTIFACT_DIR || "/data/artifacts";
+  if (!chatId || !filePath || !fileName) {
+    log("✗ send-file 缺少 FEISHU_CHAT_ID / FEISHU_FILE_PATH / FEISHU_FILE_NAME");
+    process.exit(2);
+  }
+  const channel = createLarkChannel({
+    appId,
+    appSecret,
+    httpTimeoutMs: 120000,
+    outbound: { allowedFileDirs: [artifactDir] },
+  });
+  const res = await channel.send(chatId, {
+    file: { source: filePath, fileName },
+  });
+  emit({ event: "file_sent", message_id: res.messageId ?? null, chat_id: chatId, file_name: fileName });
+}
+
 // ── run: official WebSocket channel → NDJSON on stdout ────────────────────────
 async function doRun() {
   const { appId, appSecret } = appCreds();
@@ -243,15 +270,16 @@ const MODES = {
   scopes: doScopes,
   "create-group": doCreateGroup,
   send: doSend,
+  "send-file": doSendFile,
   run: doRun,
 };
 // One-shot modes resolve and must exit (createLarkChannel keeps timers/sockets
 // alive); only `run` stays up, held by its WebSocket + heartbeat interval.
-const ONESHOT = new Set(["register", "scopes", "create-group", "send"]);
+const ONESHOT = new Set(["register", "scopes", "create-group", "send", "send-file"]);
 const mode = process.argv[2];
 const fail = (e) => {
   log("✗", e instanceof LarkChannelError ? `${e.code}: ${e.message}` : (e?.stack || e?.message || e));
   process.exit(1);
 };
 if (MODES[mode]) MODES[mode]().then(() => { if (ONESHOT.has(mode)) process.exit(0); }).catch(fail);
-else { log("usage: sidecar.js register | scopes | create-group | send | run"); process.exit(2); }
+else { log("usage: sidecar.js register | scopes | create-group | send | send-file | run"); process.exit(2); }

@@ -43,6 +43,7 @@ from claudeteam.util import (
 USAGE = (
     "usage: claudeteam feishu connect [--quick|--manual] [--group-name NAME] "
     "[--tenant feishu|lark]\n"
+    "       claudeteam feishu send-file <path> [--name FILE_NAME]\n"
     "  Register a Feishu/Lark bot for this team + auto-create the team group.\n"
     "  (default)  browser-automates a 自建应用 (un-@'d group messages work):\n"
     "             scan the login QR once, the rest is auto; falls back to\n"
@@ -359,7 +360,54 @@ def _connect(argv: list[str]) -> int:
                           "在可交互终端里重跑 `claudeteam feishu connect`")
 
 
-_SUBCOMMANDS = {"connect": _connect}
+def _send_file(argv: list[str], *, run_sidecar=None) -> int:
+    """Upload one regular artifact from the configured artifact directory."""
+    rest = list(argv)
+    file_name = pop_flag(rest, "--name") or ""
+    if not rest:
+        return error_exit(f"❌ 缺少文件路径\n{USAGE}")
+    raw_path = rest.pop(0)
+    if (rc := reject_extra_args(rest, USAGE)) is not None:
+        return rc
+
+    artifact_dir = Path(os.environ.get("CLAUDETEAM_ARTIFACT_DIR", "/data/artifacts")).resolve()
+    try:
+        file_path = Path(raw_path).resolve(strict=True)
+    except OSError as e:
+        return error_exit(f"❌ 文件不可用：{e}")
+    try:
+        file_path.relative_to(artifact_dir)
+    except ValueError:
+        return error_exit(f"❌ 只允许发送 {artifact_dir} 内的构建产物")
+    if not file_path.is_file():
+        return error_exit("❌ 目标不是普通文件")
+    size = file_path.stat().st_size
+    if size <= 0 or size > 200 * 1024 * 1024:
+        return error_exit("❌ 文件必须大于 0 且不超过 200 MiB")
+    safe_name = file_name or file_path.name
+    if Path(safe_name).name != safe_name or safe_name in {".", ".."}:
+        return error_exit("❌ --name 只能是文件名，不能包含目录")
+
+    chat_id = config.chat_id()
+    if not chat_id:
+        return error_exit("❌ chat_id is empty; run `claudeteam feishu connect`")
+    env = lark.subprocess_env()
+    extra_env = {
+        "FEISHU_CHAT_ID": chat_id,
+        "FEISHU_FILE_PATH": str(file_path),
+        "FEISHU_FILE_NAME": safe_name,
+        "CLAUDETEAM_ARTIFACT_DIR": str(artifact_dir),
+        **{k: env[k] for k in ("FEISHU_APP_ID", "FEISHU_APP_SECRET") if env.get(k)},
+    }
+    runner = run_sidecar or _run_sidecar
+    result = runner("send-file", extra_env=extra_env)
+    if not result or result.get("event") != "file_sent":
+        return error_exit("❌ 飞书文件上传或发送失败；确认机器人已获得 im:resource 权限")
+    print(f"✅ 已发送文件到飞书群：{safe_name} ({size} bytes)")
+    return 0
+
+
+_SUBCOMMANDS = {"connect": _connect, "send-file": _send_file}
 
 
 def main(argv: list[str]) -> int:

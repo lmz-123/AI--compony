@@ -1,0 +1,4 @@
+interface:
+  display_name: "TripCanvas Android 构建"
+  short_description: "构建、校验并通过飞书交付 TripCanvas Android 安装包"
+  default_prompt: "Use $build-tripcanvas-android to build and deliver a verified TripCanvas Android APK."

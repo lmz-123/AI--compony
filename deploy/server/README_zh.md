@@ -1,17 +1,18 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`ops` 默认只读，负责容器、日志、主机资源、PostgreSQL、Redis 和可选阿里云 SLS 排障，并在修复发布后复验。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障 skill。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`ops` 默认只读，负责容器、日志、主机资源、PostgreSQL、Redis 和可选阿里云 SLS 排障，并在修复发布后复验。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。运行时通过 `/data/state/.env` 中的 API Key 调用配置好的远程模型网关。
 
 ## 目录初始化
 
 在仓库根目录执行：
 
 ```bash
-mkdir -p team-data/state projects server-secrets/codex server-secrets/ssh
+mkdir -p team-data/state team-data/artifacts projects server-secrets/codex server-secrets/ssh
 cp -R templates/ai-company/. team-data/
 cp deploy/server/examples/codex-config.toml server-secrets/codex/config.toml
 cp deploy/server/examples/deploy-targets.toml team-data/deploy-targets.toml
 cp deploy/server/examples/ops-targets.toml team-data/ops-targets.toml
+cp deploy/server/examples/build-targets.toml team-data/build-targets.toml
 cp deploy/server/examples/ssh_config server-secrets/ssh/config
 chmod 700 server-secrets/ssh server-secrets/codex
 chmod 600 server-secrets/codex/config.toml server-secrets/ssh/config
@@ -25,6 +26,7 @@ chmod 600 server-secrets/codex/config.toml server-secrets/ssh/config
 
 ```text
 OPENAI_API_KEY=你的中转站Key
+GITHUB_TOKEN=仅授权lmz-123/MyAPPs的细粒度Token
 ```
 
 然后执行：
@@ -33,7 +35,7 @@ OPENAI_API_KEY=你的中转站Key
 chmod 600 team-data/state/.env team-data/state/feishu_app.json
 ```
 
-不要把这个文件、`team-data/` 或 `server-secrets/` 加入 Git。Codex 自定义 provider 位于 `server-secrets/codex/config.toml`；默认示例使用 `https://xiaoxin8.com` 和 Responses API。
+`GITHUB_TOKEN` 需要对 `lmz-123/MyAPPs` 具有 Contents 只读和 Actions 读写权限，用于触发 workflow 和下载产物。不要把这个文件、`team-data/` 或 `server-secrets/` 加入 Git。Codex 自定义 provider 位于 `server-secrets/codex/config.toml`；默认示例使用 `https://xiaoxin8.com` 和 Responses API。
 
 容器启动时会从该 `.env` 自动生成 Codex 所需的临时 `/root/.codex/auth.json`，再把它共享给四个隔离的 agent HOME。无需在服务器交互执行 `codex login`；更换 Key 后重启容器即可。
 
@@ -74,6 +76,48 @@ logstore = ""
 
 只有确实使用 SLS 时才改为 `true` 并填写资源名。AK/SK 只能通过服务器上的合规 Aliyun CLI profile 提供，禁止写入 Git、`ops-targets.toml`、群消息或日志。当前镜像不默认安装 Aliyun CLI；未启用 SLS 不影响 Docker、PostgreSQL 和 Redis 排障。
 
+## Android APK 构建与飞书交付
+
+Android 构建在 GitHub Actions 执行，服务器不安装 Flutter、JDK 或 Android SDK。编辑 `team-data/build-targets.toml`，填写 Android 手机实际可以访问的后端地址：
+
+```toml
+default_api_base_url = "https://你的TripCanvas接口域名"
+```
+
+不能填写 `localhost` 或 `127.0.0.1`。默认只允许 `main` 和 debug APK；不要在尚未配置正式签名时打开 `allow_release`。
+
+在 `lmz-123/MyAPPs` 的 GitHub 仓库 Settings -> Secrets and variables -> Actions 中新增 `AMAP_ANDROID_KEY`。debug 和 release 都需要这个高德 Android Key；不要把它写进服务器 `.env`、`build-targets.toml`、代码仓库或飞书消息。
+
+飞书机器人还需要 `im:resource` 权限。进入当前机器人的飞书开放平台控制台，添加“获取与上传图片或文件资源”权限，创建新版本并发布/批准。旧版本不重新发布，文件上传不会生效。
+
+首次先验证白名单，不触发真实构建：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  python /app/skills/build-tripcanvas-android/scripts/build_android.py \
+  --target tripcanvas-android \
+  --ref main \
+  --build-type debug \
+  --format apk \
+  --dry-run
+```
+
+真实构建、校验并发送当前飞书群：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  python /app/skills/build-tripcanvas-android/scripts/build_android.py \
+  --target tripcanvas-android \
+  --ref main \
+  --build-type debug \
+  --format apk \
+  --send-to-feishu
+```
+
+产物和 manifest 保存在 `team-data/artifacts/<request_id>/`。GitHub Artifact 保留 7 天；确认交付后可按 request 目录清理服务器副本，不要删除整个 `team-data`。
+
+正式 release 还需要在 `lmz-123/MyAPPs` 的 GitHub Actions secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_STORE_PASSWORD`，完成一次独立签名验证后再把 `allow_release` 改为 `true`。
+
 ## 启动与验证
 
 迁移前先在旧机器运行 `claudeteam down`，同一个飞书 App 不允许两套 router 并行订阅。
@@ -99,6 +143,8 @@ cp templates/ai-company/developer.md team-data/developer.md
 cp templates/ai-company/deployer.md team-data/deployer.md
 cp templates/ai-company/ops.md team-data/ops.md
 cp deploy/server/examples/ops-targets.toml team-data/ops-targets.toml
+cp -n deploy/server/examples/build-targets.toml team-data/build-targets.toml
+mkdir -p team-data/artifacts
 ```
 
 如果服务器仓库使用其他远程名，先用 `git remote -v` 确认后替换 `origin`。然后编辑 `team-data/claudeteam.toml`，保留原有真实 `chat_id`，在 `[team.agents.deployer]` 后加入：
@@ -144,4 +190,9 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam team
 ```text
 TripCanvas 出现 <症状>，发生时间约 <时间和时区>，关联 request_id/trace_id 是 <ID，如有>。
 请主管先安排 ops 只读排障；若确认是代码问题，再安排 developer 修复和测试。未经我本次明确确认，不要部署。
+```
+
+```text
+请打包 TripCanvas main 分支的 Android 测试版 APK。
+使用 build-targets.toml 中的 API 地址，测试和构建成功后校验 SHA256，并把 APK 发送到当前飞书群。不要构建正式版，不要发布应用商店。
 ```

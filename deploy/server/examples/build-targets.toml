@@ -1,0 +1,13 @@
+version = 1
+artifact_dir = "/data/artifacts"
+token_secret = "GITHUB_TOKEN"
+
+[[targets]]
+name = "tripcanvas-android"
+owner = "lmz-123"
+repository = "MyAPPs"
+workflow = "android-build.yml"
+default_ref = "main"
+allowed_refs = ["main"]
+default_api_base_url = ""
+allow_release = false
