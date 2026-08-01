@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。四个角色统一使用 `gpt-5.6-terra`；开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。四个角色统一使用 `gpt-5.6-terra`；开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。员工只在完成或阻塞时向主管汇报，主管不转述过程消息，简单任务只向群里回复最终结果。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
 
 ## 目录初始化
 
