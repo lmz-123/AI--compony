@@ -42,6 +42,9 @@ COPY scripts/feishu_channel/ ./scripts/feishu_channel/
 RUN cd scripts/feishu_channel \
     && npm install --omit=dev --silent --no-fund --no-audit
 
+COPY scripts/deploy/ ./scripts/deploy/
+COPY scripts/dev/ ./scripts/dev/
+
 COPY templates/ ./templates/
 COPY skills/ ./skills/
 

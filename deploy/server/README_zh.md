@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。四个角色统一使用 `gpt-5.6-terra`；开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。员工只在完成或阻塞时向主管汇报，主管不转述过程消息，简单任务只向群里回复最终结果。需求、业务规则或其他影响结果的事项不确定时，团队会暂停并先在飞书询问老板。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`developer` 使用 `gpt-5.6-terra`；`manager` 与 `ops` 使用 `gpt-5.4`；`deployer` 使用更省 token 的 `gpt-5.2`。开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。员工只在完成或阻塞时向主管汇报，主管不转述过程消息，简单任务只向群里回复最终结果。需求、业务规则或其他影响结果的事项不确定时，团队会暂停并先在飞书询问老板。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
 
 ## 目录初始化
 
@@ -51,6 +51,32 @@ chmod 600 server-secrets/ssh/deployer_ed25519 server-secrets/ssh/known_hosts
 ```
 
 编辑 `team-data/deploy-targets.toml`，只登记允许操作的服务器、仓库、目录和命令。目标服务器本身应配置 GitHub Deploy Key，部署容器不需要持有各项目的 GitHub 私钥。
+
+部署员工只应调用固定脚本，而不是临时手写 SSH / git / docker compose 命令：
+
+```bash
+python /app/scripts/deploy/run_deploy.py \
+  --target <target> \
+  --project <project> \
+  --ref <verified-branch-or-commit> \
+  --json
+```
+
+如果目标是生产环境，并且本次已经得到老板明确批准，再追加：
+
+```bash
+--allow-production
+```
+
+脚本会自动完成：
+
+- 读取 `/data/deploy-targets.toml`
+- 校验 SSH 目标、仓库 remote 和项目目录
+- `git fetch` 并切到指定 ref
+- 执行清单中的部署命令与健康检查
+- 失败时用清单中的回滚命令把 `<previous-commit>` 替换为部署前 HEAD 后自动回滚
+
+部署员工只需选择参数并汇报脚本结果。
 
 ## 智能运维排障
 
@@ -152,7 +178,7 @@ mkdir -p team-data/artifacts
 ```toml
 [team.agents.ops]
 cli        = "codex-cli"
-model      = "gpt-5.6-terra"
+model      = "gpt-5.4"
 reasoning_effort = "low"
 role       = "智能运维员工：日志优先的只读排障、运行检查与例行构建"
 specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS", "Android debug 构建"]

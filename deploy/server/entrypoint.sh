@@ -26,6 +26,8 @@ auth.write_text(json.dumps({"auth_mode": "apikey", "OPENAI_API_KEY": key}) + "\n
 auth.chmod(0o600)
 PY
 
+python /app/scripts/dev/prepare_backend_env.py --scan-root /workspace/projects || true
+
 claudeteam install-hooks
 claudeteam up
 exec sleep infinity
