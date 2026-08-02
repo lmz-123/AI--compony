@@ -30,4 +30,12 @@ python /app/scripts/dev/prepare_backend_env.py --scan-root /workspace/projects |
 
 claudeteam install-hooks
 claudeteam up
+
+if [ "${CLAUDETEAM_MONITOR_ENABLED:-1}" != "0" ]; then
+  claudeteam monitor serve \
+    --host "${CLAUDETEAM_MONITOR_HOST:-127.0.0.1}" \
+    --port "${CLAUDETEAM_MONITOR_PORT:-8765}" \
+    >> /data/state/monitor.log 2>&1 &
+fi
+
 exec sleep infinity

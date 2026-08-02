@@ -187,6 +187,35 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam \
 
 正式 release 还需要在 `lmz-123/MyAPPs` 的 GitHub Actions secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_STORE_PASSWORD`，完成一次独立签名验证后再把 `allow_release` 改为 `true`。
 
+## 只读监控页面
+
+服务器容器默认会启动一个只读监控后台，只监听服务器本机：
+
+```text
+http://127.0.0.1:8765/
+```
+
+它只读取状态，不控制 agent、不写任务、不执行部署。JSON 接口：
+
+```bash
+curl -fsS http://127.0.0.1:8765/api/monitor
+```
+
+也可以在容器内直接看同一份数据：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam monitor --json
+```
+
+如果你想在自己电脑浏览器打开，推荐先用 SSH 隧道：
+
+```bash
+ssh -L 8765:127.0.0.1:8765 root@你的服务器IP
+```
+
+然后本机浏览器访问 `http://127.0.0.1:8765/`。不建议直接把监控页暴露公网；如果确实要手机公网访问，先用 Nginx 加 Basic Auth / 白名单 / HTTPS，再把 `CLAUDETEAM_MONITOR_HOST` 改成 `0.0.0.0` 并确认安全组只放行你的来源 IP。
+
 ## 启动与验证
 
 迁移前先在旧机器运行 `claudeteam down`，同一个飞书 App 不允许两套 router 并行订阅。
