@@ -14,11 +14,13 @@ dist/
 tests/
 projects/
 workspace/
-# Ignore everything under scripts/ EXCEPT the feishu_channel sidecar, which
-# the Dockerfile COPYs + bakes (event ingress + `feishu connect` registration).
-# Its node_modules is rebuilt in-image, so keep it out of the context.
+# Ignore everything under scripts/ EXCEPT the baked runtime helpers that the
+# server image COPYs (Feishu sidecar, deploy helper, backend env warmup).
+# Their transient outputs stay out of the context.
 scripts/*
 !scripts/feishu_channel
+!scripts/deploy
+!scripts/dev
 scripts/feishu_channel/node_modules
 
 # Per-deployment state — never bake into an image
