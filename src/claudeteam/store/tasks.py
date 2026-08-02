@@ -181,6 +181,50 @@ def list_tasks(*, status: str | None = None,
     return rows
 
 
+def active_for(assignee: str) -> list[dict]:
+    """Return non-terminal work already occupying an assignee."""
+    return [
+        t for t in list_tasks(assignee=assignee)
+        if t.get("status") in {"进行中", SUSPEND_STATUS}
+    ]
+
+
+def claim_next(assignee: str, *, allow_busy: bool = False) -> tuple[str, dict | None]:
+    """Move the oldest pending task for assignee to 进行中.
+
+    Returns (state, task):
+      - "busy": assignee already has active work and allow_busy is false
+      - "empty": no pending task for assignee
+      - "claimed": task was moved to 进行中
+
+    This is the lightweight backend queue gate: manager can create many
+    待处理 tasks, but workers only receive the next one when this claim succeeds.
+    """
+    with _locked():
+        data = _load()
+        rows = data.get("tasks", [])
+        if not allow_busy:
+            busy = [
+                t for t in rows
+                if t.get("assignee") == assignee
+                and t.get("status") in {"进行中", SUSPEND_STATUS}
+            ]
+            if busy:
+                busy.sort(key=lambda t: int(t["id"].split("-")[1]))
+                return "busy", dict(busy[0])
+        pending = [
+            t for t in rows
+            if t.get("assignee") == assignee and t.get("status") == DEFAULT_STATUS
+        ]
+        if not pending:
+            return "empty", None
+        pending.sort(key=lambda t: int(t["id"].split("-")[1]))
+        task = pending[0]
+        _set_status(task, "进行中")
+        _save(data)
+        return "claimed", dict(task)
+
+
 # ── intent records (immutable verbatim asks) ──────────────────────
 
 

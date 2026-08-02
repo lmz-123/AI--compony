@@ -63,8 +63,9 @@ def _summon_roster() -> None:
     summons each worker, and every worker reports back. This is the autonomous
     self-check — no human, no system-posted cards; the live agent loop
     (manager dispatch → worker replies) is what proves the team actually works.
-    Called only on a FRESH `up` (after the router is live so the loop can
-    route), and best-effort — a failed kick must not fail `up`."""
+    Called only on a FRESH `up` when `[startup].roll_call = true` (after the
+    router is live so the loop can route), and best-effort — a failed kick must
+    not fail `up`."""
     from claudeteam.agents import get_adapter
     from claudeteam.runtime import wake
     if "manager" not in config.agent_names():
@@ -95,8 +96,9 @@ def main(argv: list[str]) -> int:
             "   先运行 `claudeteam feishu connect` 引导注册自建应用并自动建群，"
             "再 `claudeteam up`。")
 
-    # Fresh bring-up (session didn't exist yet) → the manager runs the roll-call
-    # once everything's live. Restarts/idempotent `up` skip it (no re-spam).
+    # Fresh bring-up (session didn't exist yet) may ask the manager to run a
+    # roll-call once everything's live. It is opt-in because repeated server
+    # rebuilds/restarts otherwise spend tokens on "everyone report in" chatter.
     fresh = not tmux.has_session(config.session_name())
 
     rc = _ensure_started()
@@ -108,7 +110,8 @@ def main(argv: list[str]) -> int:
 
     if rc == 0:
         print("✅ team up — run `claudeteam health` to verify")
-        if fresh:
+        from claudeteam.runtime import tunables
+        if fresh and bool(tunables.tunable("startup.roll_call", False)):
             _summon_roster()
             print("📣 已让主管在群里发起全员点名（自检：看主管+全员汇报）")
     else:

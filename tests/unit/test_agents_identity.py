@@ -154,13 +154,12 @@ def test_render_includes_notes_section_when_set():
     assert "擅长长文本审阅" in text
 
 
-# ── playbook: a role instruction file that becomes the agent's identity body ──
+# ── playbook: role instruction file is referenced and read on demand ──
 
 
 def test_render_includes_playbook_when_set():
-    """`playbook = "<file>"` projects a self-contained role doc into the agent's
-    identity (after a divider), layered ON TOP of the team-protocol body — the
-    mechanism domain templates use to ship rich per-role instructions."""
+    """`playbook = "<file>"` now renders an on-demand pointer instead of
+    injecting the whole role doc into every wake/native-memory prompt."""
     from claudeteam.runtime import paths
     team = {"agents": {"worker_cc": {
         "cli": "claude-code", "model": "sonnet", "role": "员工",
@@ -169,8 +168,11 @@ def test_render_includes_playbook_when_set():
         (paths.config_file().parent / "backend.md").write_text(
             "# 后端工程师\n\n负责 API 与数据。PLAYBOOK_MARKER", encoding="utf-8")
         text = identity.render("worker_cc")
-    assert "PLAYBOOK_MARKER" in text
-    assert "后端工程师" in text
+    assert "Role playbook (read on demand)" in text
+    assert "backend.md" in text
+    assert "available" in text
+    assert "PLAYBOOK_MARKER" not in text
+    assert "后端工程师" not in text
     assert "claudeteam send" in text   # team-protocol body still there, not replaced
 
 
@@ -182,6 +184,7 @@ def test_render_playbook_missing_file_degrades():
     with isolated_env(team=team):
         text = identity.render("worker_cc")   # must not raise
     assert "员工" in text
+    assert "missing/unreadable" in text
 
 
 def test_render_resolves_config_fields_with_explicit_role():
@@ -199,7 +202,8 @@ def test_render_resolves_config_fields_with_explicit_role():
         text = identity.render("worker_cc", role="员工", cli="claude-code", model="sonnet")
     assert "SPECMARK" in text   # specialty no longer dropped on the lifecycle path
     assert "NOTEMARK" in text   # notes no longer dropped
-    assert "PLAYMARK" in text   # playbook resolves too
+    assert "pb.md" in text      # playbook pointer resolves too
+    assert "PLAYMARK" not in text
 
 
 def test_manager_renders_team_specialties_block():
@@ -289,8 +293,10 @@ def test_init_prompt_teaches_inbox_processing_after_R168():
     no-op)."""
     with isolated_env():
         prompt = identity.init_prompt("worker_cc")
-        # Per-message processing instruction
-        assert "For EACH unread inbox message" in prompt
+        # Per-message processing instruction, with task isolation instead of
+        # sweeping every unread item into one worker turn.
+        assert "Process inbox with task isolation" in prompt
+        assert "leave it unread and tell manager you are busy" in prompt
         # Tells agent to use claudeteam say for status reports
         assert "claudeteam say worker_cc" in prompt
         # Tells agent to mark each message read
@@ -352,7 +358,7 @@ def test_native_memory_text_omits_digest_when_no_memory():
     assert "## 既往记忆" not in text
 
 
-# ── intent anchor (anti-drift double-insurance) ───────────────────
+# ── active task brief anchor (anti-drift without raw boss-text leak) ─
 
 
 def _suspend_free_in_progress(assignee, title, intent_id):
@@ -362,18 +368,30 @@ def _suspend_free_in_progress(assignee, title, intent_id):
     return tid
 
 
-def test_native_memory_text_anchors_active_intent_verbatim():
-    """A worker with an active intent-linked task gets the boss's verbatim
-    raw_text anchored into its always-loaded CLAUDE.md projection."""
+def _anchor_section(text: str) -> str:
+    if "## Active task anchor (brief only)" not in text:
+        return ""
+    tail = text.split("## Active task anchor (brief only)", 1)[1]
+    return tail.split("## Memory maintenance", 1)[0]
+
+
+def test_native_memory_text_anchors_active_task_brief_not_verbatim_intent():
+    """A worker with an active intent-linked task gets the manager/task brief
+    anchored into always-loaded context; the boss's verbatim raw_text stays in
+    the intent store for explicit lookup only."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
     with isolated_env(team=team):
-        iid = tasks.create_intent("把支付页改成两步结账，别加第三步")
+        raw = "把支付页改成两步结账，别加第三步"
+        iid = tasks.create_intent(raw)
         _suspend_free_in_progress("worker_cc", "重构结账", iid)
         text = identity.native_memory_text("worker_cc")
-    assert "Boss's verbatim anchor" in text
-    assert "把支付页改成两步结账，别加第三步" in text  # verbatim, not paraphrased
-    assert iid in text
+        assert tasks.get_intent(iid)["raw_text"] == raw
+    anchor = _anchor_section(text)
+    assert anchor
+    assert "重构结账" in anchor
+    assert raw not in anchor
+    assert iid in anchor
 
 
 def test_native_memory_text_omits_anchor_when_no_active_intent_task():
@@ -381,11 +399,11 @@ def test_native_memory_text_omits_anchor_when_no_active_intent_task():
                                       "role": "员工"}}}
     with isolated_env(team=team):
         text = identity.native_memory_text("worker_cc")
-    assert "Boss's verbatim anchor" not in text
+    assert "Active task anchor (brief only)" not in text
 
 
 def test_anchor_excludes_terminal_tasks():
-    """A completed task's intent should not keep cluttering the anchor —
+    """A completed task's brief should not keep cluttering the anchor —
     only non-terminal (进行中 / 需审批) tasks anchor."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
@@ -394,76 +412,86 @@ def test_anchor_excludes_terminal_tasks():
         tid = _suspend_free_in_progress("worker_cc", "t", iid)
         tasks.update(tid, status="已完成")
         text = identity.native_memory_text("worker_cc")
-    assert "Boss's verbatim anchor" not in text
+    assert "Active task anchor (brief only)" not in text
 
 
-def test_anchor_includes_suspended_task_intent():
-    """需审批 is non-terminal — its intent must stay anchored so the agent
+def test_anchor_includes_suspended_task_brief():
+    """需审批 is non-terminal — its task brief must stay anchored so the agent
     doesn't drift while waiting on the boss."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
     with isolated_env(team=team):
-        iid = tasks.create_intent("挂起期间也要记得的原话")
-        tid = _suspend_free_in_progress("worker_cc", "t", iid)
+        raw = "挂起期间也要记得的原话"
+        iid = tasks.create_intent(raw)
+        tid = _suspend_free_in_progress("worker_cc", "挂起任务 brief", iid)
         tasks.pause(tid)
         text = identity.native_memory_text("worker_cc")
-    assert "挂起期间也要记得的原话" in text
+    assert "挂起任务 brief" in text
+    assert raw not in text
 
 
-def test_init_prompt_anchors_active_intent():
-    """Double-insurance: the anchor also rides the on-wake init prompt, not
-    only the native CLAUDE.md."""
+def test_init_prompt_anchors_active_task_brief():
+    """Double-insurance: the active brief also rides the on-wake init prompt,
+    not only the native CLAUDE.md."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
     with isolated_env(team=team):
-        iid = tasks.create_intent("init prompt 也要带的原话")
-        _suspend_free_in_progress("worker_cc", "t", iid)
+        raw = "init prompt 不应带的老板原话"
+        iid = tasks.create_intent(raw)
+        _suspend_free_in_progress("worker_cc", "init prompt brief", iid)
         prompt = identity.init_prompt("worker_cc")
-    assert "Boss's verbatim anchor" in prompt
-    assert "init prompt 也要带的原话" in prompt
+    assert "Active task anchor (brief only)" in prompt
+    assert "init prompt brief" in prompt
+    assert raw not in prompt
     assert "Continue your previously unfinished work" in prompt
 
 
 def test_anchor_only_for_the_assigned_agent():
-    """worker_a's intent must not leak into worker_b's anchor."""
+    """worker_a's task brief must not leak into worker_b's anchor."""
     team = {"agents": {"worker_a": {"cli": "claude-code", "role": "x"},
                        "worker_b": {"cli": "claude-code", "role": "y"}}}
     with isolated_env(team=team):
         iid = tasks.create_intent("只属于 a 的原话")
-        _suspend_free_in_progress("worker_a", "t", iid)
+        _suspend_free_in_progress("worker_a", "只属于 a 的 brief", iid)
         text_b = identity.native_memory_text("worker_b")
     assert "只属于 a 的原话" not in text_b
+    assert "只属于 a 的 brief" not in text_b
 
 
-def test_anchor_lists_multiple_distinct_intents():
-    """An agent juggling two intent-linked tasks gets both verbatim asks
-    anchored — neither should crowd the other out."""
+def test_anchor_lists_multiple_distinct_active_task_briefs():
+    """An agent juggling two intent-linked tasks gets both active task briefs
+    anchored — without injecting either boss raw_text."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
     with isolated_env(team=team):
-        i1 = tasks.create_intent("原话甲：两步结账")
-        i2 = tasks.create_intent("原话乙：深色首页")
+        raw1 = "原话甲：两步结账"
+        raw2 = "原话乙：深色首页"
+        i1 = tasks.create_intent(raw1)
+        i2 = tasks.create_intent(raw2)
         _suspend_free_in_progress("worker_cc", "结账", i1)
         _suspend_free_in_progress("worker_cc", "首页", i2)
         text = identity.native_memory_text("worker_cc")
-    assert "原话甲：两步结账" in text
-    assert "原话乙：深色首页" in text
+    assert "结账" in text
+    assert "首页" in text
+    assert raw1 not in text
+    assert raw2 not in text
     assert i1 in text and i2 in text
 
 
-def test_anchor_groups_tasks_sharing_one_intent():
-    """Two tasks back-linking the SAME intent collapse to one anchor line
-    that lists both task ids — the verbatim ask appears once, not twice."""
+def test_anchor_lists_tasks_sharing_one_intent_without_raw_text():
+    """Two active tasks back-linking the SAME intent both appear as task
+    briefs, but the shared boss raw_text is still not injected."""
     team = {"agents": {"worker_cc": {"cli": "claude-code", "model": "sonnet",
                                       "role": "员工"}}}
     with isolated_env(team=team):
-        iid = tasks.create_intent("一句原话拆成两个子任务")
+        raw = "一句原话拆成两个子任务"
+        iid = tasks.create_intent(raw)
         t1 = _suspend_free_in_progress("worker_cc", "子任务一", iid)
         t2 = _suspend_free_in_progress("worker_cc", "子任务二", iid)
         text = identity.native_memory_text("worker_cc")
-    # appears exactly once, both task ids grouped on the same line
-    assert text.count("一句原话拆成两个子任务") == 1
-    assert f"{t1}/{t2}" in text
+    assert raw not in text
+    assert "子任务一" in text and "子任务二" in text
+    assert t1 in text and t2 in text
 
 
 def test_anchor_never_raises_on_store_error_returns_empty():
@@ -478,7 +506,7 @@ def test_anchor_never_raises_on_store_error_returns_empty():
     with isolated_env(team=team), attr_patch(tasks, list_tasks=_boom):
         # must not raise, and simply omits the anchor section
         text = identity.native_memory_text("worker_cc")
-    assert "Boss's verbatim anchor" not in text
+    assert "Active task anchor (brief only)" not in text
 
 
 def test_write_also_writes_claude_native_memory_file():
@@ -515,17 +543,19 @@ def test_refresh_native_memory_rewrites_anchor_to_current():
     with isolated_env(team=team):
         # provisioned while idle: native file exists, no anchor
         identity.write("worker_cc")
-        assert "Boss's verbatim anchor" not in _native_path("worker_cc").read_text("utf-8")
-        # a task goes active → refresh injects the verbatim anchor on disk
-        iid = tasks.create_intent("原话：两步结账别加第三步")
-        tid = _suspend_free_in_progress("worker_cc", "结账", iid)
+        assert "Active task anchor (brief only)" not in _native_path("worker_cc").read_text("utf-8")
+        # a task goes active → refresh injects the active brief on disk
+        raw = "原话：两步结账别加第三步"
+        iid = tasks.create_intent(raw)
+        tid = _suspend_free_in_progress("worker_cc", "结账 brief", iid)
         assert identity.refresh_native_memory("worker_cc") is True
         on_disk = _native_path("worker_cc").read_text("utf-8")
-        assert "原话：两步结账别加第三步" in on_disk and iid in on_disk
+        assert "结账 brief" in on_disk and iid in on_disk
+        assert raw not in on_disk
         # task completes → refresh drops the now-stale anchor from disk
         tasks.update(tid, status="已完成")
         assert identity.refresh_native_memory("worker_cc") is True
-        assert "原话：两步结账别加第三步" not in \
+        assert "结账 brief" not in \
             _native_path("worker_cc").read_text("utf-8")
 
 
@@ -663,20 +693,20 @@ def test_task_cli_transition_refreshes_on_disk_anchor():
     with isolated_env(team=team):
         identity.write("worker_cc")               # online worker, idle
         run_cli(["task", "intent", "create", "原话：CLI 触发刷新"])
-        run_cli(["task", "create", "worker_cc", "干活", "--intent", "I-1"])
+        run_cli(["task", "create", "worker_cc", "干活 brief", "--intent", "I-1"])
         # going 进行中 through the CLI refreshes the on-disk anchor
         run_cli(["task", "update", "T-1", "--status", "进行中"])
-        assert "原话：CLI 触发刷新" in \
-            _native_path("worker_cc").read_text("utf-8")
+        on_disk = _native_path("worker_cc").read_text("utf-8")
+        assert "干活 brief" in on_disk
+        assert "原话：CLI 触发刷新" not in on_disk
         # completing through the CLI drops the now-stale anchor on disk
         run_cli(["task", "update", "T-1", "--status", "已完成"])
-        assert "原话：CLI 触发刷新" not in \
-            _native_path("worker_cc").read_text("utf-8")
+        assert _anchor_section(_native_path("worker_cc").read_text("utf-8")) == ""
 
 
 def test_task_cli_reassign_moves_on_disk_anchor_between_agents():
     """Reassigning an active task refreshes BOTH the old and new owner's
-    on-disk anchor — the verbatim ask follows the task to its new owner and
+    on-disk anchor — the active brief follows the task to its new owner and
     leaves the previous owner's file."""
     team = {"agents": {
         "worker_a": {"cli": "claude-code", "model": "sonnet", "role": "x"},
@@ -685,12 +715,15 @@ def test_task_cli_reassign_moves_on_disk_anchor_between_agents():
         identity.write("worker_a")
         identity.write("worker_b")
         run_cli(["task", "intent", "create", "跟着任务走的原话"])
-        run_cli(["task", "create", "worker_a", "活", "--intent", "I-1"])
+        run_cli(["task", "create", "worker_a", "跟着任务走的 brief", "--intent", "I-1"])
         run_cli(["task", "update", "T-1", "--status", "进行中"])
-        assert "跟着任务走的原话" in _native_path("worker_a").read_text("utf-8")
-        run_cli(["task", "update", "T-1", "--assignee", "worker_b"])
+        assert "跟着任务走的 brief" in _native_path("worker_a").read_text("utf-8")
         assert "跟着任务走的原话" not in _native_path("worker_a").read_text("utf-8")
-        assert "跟着任务走的原话" in _native_path("worker_b").read_text("utf-8")
+        run_cli(["task", "update", "T-1", "--assignee", "worker_b"])
+        assert _anchor_section(_native_path("worker_a").read_text("utf-8")) == ""
+        anchor_b = _anchor_section(_native_path("worker_b").read_text("utf-8"))
+        assert "跟着任务走的 brief" in anchor_b
+        assert "跟着任务走的原话" not in anchor_b
 
 
 def test_write_skips_native_memory_for_non_claude_cli():
@@ -772,5 +805,3 @@ def test_read_playbook_tolerates_non_utf8_file():
 def test_read_playbook_missing_file_degrades_to_empty():
     with tempfile.TemporaryDirectory() as tmp:
         assert identity._read_playbook(str(Path(tmp) / "nope.md")) == ""
-
-

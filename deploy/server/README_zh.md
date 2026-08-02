@@ -1,6 +1,6 @@
 # AI Company 服务器部署
 
-这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`developer` 使用 `gpt-5.6-terra`；`manager` 与 `ops` 使用 `gpt-5.4`；`deployer` 使用更省 token 的 `gpt-5.2`。开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待。员工只在完成或阻塞时向主管汇报，主管不转述过程消息，简单任务只向群里回复最终结果。需求、业务规则或其他影响结果的事项不确定时，团队会暂停并先在飞书询问老板。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
+这个部署在 Docker 内运行 `manager`、`developer`、`deployer`、`ops` 四个 Codex agent。`developer` 使用 `gpt-5.6-terra`；`manager` 与 `ops` 使用 `gpt-5.4`；`deployer` 使用更省 token 的 `gpt-5.4-mini`。开发使用 `high` 推理，主管使用 `medium`，部署和运维使用 `low`。四个 agent 随团队一起启动，避免首次派单等待；默认不自动全员点名，减少重启/更新时的 token 消耗。员工只在完成或阻塞时向主管汇报，主管不转述过程消息，简单任务只向群里回复最终结果。需求、业务规则或其他影响结果的事项不确定时，团队会暂停并先在飞书询问老板。`ops` 从相关日志开始，只有证据指向某个组件时才继续查询运行状态、PostgreSQL、Redis 或 SLS。宿主机不需要安装 Codex；镜像内已包含 Codex CLI、飞书 sidecar、tmux、SSH 客户端和 TripCanvas 排障/Android 构建 skill。
 
 ## 目录初始化
 
@@ -19,6 +19,15 @@ chmod 600 server-secrets/codex/config.toml server-secrets/ssh/config
 ```
 
 编辑 `team-data/claudeteam.toml`，填入已经绑定的飞书群 `chat_id`。把桌面机生成的 `state/feishu_app.json` 安全传到 `team-data/state/feishu_app.json`，权限设为 `0600`。
+
+默认配置关闭启动全员点名：
+
+```toml
+[startup]
+roll_call = false
+```
+
+如果需要首次上线时让主管在群里点名自检，可临时改为 `true`；日常重启/更新建议保持 `false`，避免无意义 token 消耗。
 
 ## Codex API Key
 
@@ -47,10 +56,27 @@ chmod 600 team-data/state/.env team-data/state/feishu_app.json
 
 ```bash
 ssh-keyscan -H -p 22 your-server.example.com > server-secrets/ssh/known_hosts
+ssh-keyscan -H github.com >> server-secrets/ssh/known_hosts
 chmod 600 server-secrets/ssh/deployer_ed25519 server-secrets/ssh/known_hosts
 ```
 
+如果部署员工需要从容器内向 GitHub push，`known_hosts` 里也必须包含 GitHub SSH host key。安全要求更高时，先按 GitHub 官方文档核对 `ssh-keyscan github.com` 输出后再写入。
+
 编辑 `team-data/deploy-targets.toml`，只登记允许操作的服务器、仓库、目录和命令。目标服务器本身应配置 GitHub Deploy Key，部署容器不需要持有各项目的 GitHub 私钥。
+
+项目如果在 `/workspace/projects` 下的目录名和 deploy project 名不一致，给项目补 `local_directory`。例如 TripCanvas 后端的 deploy project 可以叫 `tripcanvas-backend`，但本地 Git 根实际在 `/workspace/projects/MyAPPs`：
+
+```toml
+[[targets.projects]]
+name = "tripcanvas-backend"
+repository = "git@github.com:lmz-123/MyAPPs.git"
+directory = "/srv/apps/MyAPPs"
+local_directory = "MyAPPs"
+branch = "main"
+deploy_command = "docker compose -f tripcanvas-backend/docker-compose.yml up -d --build"
+healthcheck_command = "curl -fsS http://127.0.0.1:8000/health"
+rollback_command = "git checkout <previous-commit> && docker compose -f tripcanvas-backend/docker-compose.yml up -d --build"
+```
 
 部署员工只应调用固定脚本，而不是临时手写 SSH / git / docker compose 命令：
 
@@ -73,7 +99,7 @@ python /app/scripts/deploy/run_deploy.py \
 - 读取 `/data/deploy-targets.toml`
 - 校验 SSH 目标、仓库 remote 和项目目录
 - `git fetch` 并切到指定 ref
-- 执行清单中的部署命令与健康检查
+- 执行清单中的部署命令与健康检查；健康检查最多等待 90 秒，每 3 秒重试一次
 - 失败时用清单中的回滚命令把 `<previous-commit>` 替换为部署前 HEAD 后自动回滚
 
 部署员工只需选择参数并汇报脚本结果。
@@ -197,8 +223,8 @@ mkdir -p team-data/artifacts
 cli        = "codex-cli"
 model      = "gpt-5.4"
 reasoning_effort = "low"
-role       = "智能运维员工：日志优先的只读排障、运行检查与例行构建"
-specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS", "Android debug 构建"]
+role       = "智能运维员工：日志优先的只读排障与运行检查"
+specialty  = ["故障诊断", "日志分析", "按需存储排查", "Docker Compose", "阿里云 SLS"]
 playbook   = "ops.md"
 card_color = "orange"
 ```

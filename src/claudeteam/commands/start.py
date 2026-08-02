@@ -70,6 +70,7 @@ def main(argv: list[str]) -> int:
 
     tail = f" ({skipped_fired} fired, skipped)" if skipped_fired else ""
     print(f"✅ team {session} started ({provisioned} agents){tail}")
-    # The crew "reports in" via the manager-driven roll-call that `up` kicks off
-    # once the router is live (see up._summon_roster) — not a system-posted card.
+    # Optional manager-driven roll-call is owned by `up` when
+    # [startup].roll_call = true (see up._summon_roster) — not a
+    # system-posted card.
     return 0

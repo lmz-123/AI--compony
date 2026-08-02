@@ -16,7 +16,7 @@ host_smoke 的**前置**——host_smoke 默认你已经跑过本篇。
   任意机器（含纯 headless 服务器）都能跑。
 - 群自动创建 + 把 owner 拉进群
 - 凭证落盘 `state/feishu_app.json`（0600）+ `chat_id` 写进 `claudeteam.toml`
-- `claudeteam up` 后主管自动发起全员点名（自检）
+- `claudeteam up` 后可用 `claudeteam health` / `claudeteam team` 自检；若 `[startup].roll_call = true`，主管会额外发起全员点名
 - 群里实发一条 → manager 回（个人版免 @ 也能收，严格租户则群里 @bot；以群里实发为准）
 - **跨租户保证免 @ 的路径（浏览器自动自建应用）**：无参 `claudeteam feishu connect` 扫一次
   登录码 → 在桌面浏览器里自动跑完 7 个控制台阶段（create-app → add-bot → import-scopes
@@ -138,12 +138,13 @@ claudeteam install-hooks         # 要在 up 之前
 claudeteam up
 ```
 
-**Then** 首次 `up` 后主管（manager）**自动发起全员点名**：先在群里宣布，再逐一通知
-每个 worker，各 worker 自己在群里汇报身份与状态，最后主管汇总。`claudeteam health` 全绿。
+**Then** `claudeteam health` 全绿，`claudeteam team` 能看到各 agent ready。若本场景显式设置
+`[startup].roll_call = true`，首次 `up` 后主管（manager）会发起全员点名：先在群里宣布，再逐一通知
+每个 worker，各 worker 自己在群里汇报身份与状态，最后主管汇总。
 
 > 若 `chat_id` 没设，`claudeteam up` 会直接报错并指向 `claudeteam feishu connect`。
 
-**通过条件（看群里，无需真人发消息）**：`claudeteam up` 后几分钟内，群里能看到主管的
+**通过条件（看群里，无需真人发消息）**：启用 `[startup].roll_call = true` 后，`claudeteam up` 后几分钟内，群里能看到主管的
 点名公告 + 每个非退休 worker 的汇报 + 主管的汇总。看到这些 = 主管派单 + worker 在群里回
 整条链路都通。
 

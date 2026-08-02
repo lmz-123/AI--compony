@@ -9,6 +9,7 @@ centralized here to reduce prompt variance and token spend.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import subprocess
 import sys
@@ -34,6 +35,7 @@ class ProjectConfig:
     name: str
     repository: str
     directory: str
+    local_directory: str
     branch: str
     deploy_command: str
     healthcheck_command: str
@@ -104,6 +106,7 @@ def _build_target_config(raw: dict[str, Any], raw_project: dict[str, Any], confi
         name=_as_str(raw_project, "name", config_path),
         repository=_as_str(raw_project, "repository", config_path),
         directory=_as_str(raw_project, "directory", config_path),
+        local_directory=str(raw_project.get("local_directory", "") or "").strip(),
         branch=_as_str(raw_project, "branch", config_path),
         deploy_command=_as_str(raw_project, "deploy_command", config_path),
         healthcheck_command=_as_str(raw_project, "healthcheck_command", config_path),
@@ -119,7 +122,8 @@ def _build_target_config(raw: dict[str, Any], raw_project: dict[str, Any], confi
 
 
 def _run_ssh(alias: str, script: str, *args: str) -> subprocess.CompletedProcess[str]:
-    cmd = ["ssh", alias, "bash", "-s", "--", *args]
+    encoded = [base64.b64encode(arg.encode("utf-8")).decode("ascii") for arg in args]
+    cmd = ["ssh", alias, "bash", "-s", "--", *encoded]
     return subprocess.run(
         cmd,
         input=script,
@@ -132,8 +136,15 @@ def _run_ssh(alias: str, script: str, *args: str) -> subprocess.CompletedProcess
 def _check_remote_target(cfg: TargetConfig) -> None:
     script = r"""
 set -euo pipefail
-repo_dir="$1"
-expected_repo="$2"
+decode_arg() {
+  python3 - "$1" <<'PY'
+import base64
+import sys
+print(base64.b64decode(sys.argv[1]).decode("utf-8"))
+PY
+}
+repo_dir="$(decode_arg "$1")"
+expected_repo="$(decode_arg "$2")"
 
 if [ ! -d "$repo_dir/.git" ]; then
   echo "ERROR: repo_not_found:$repo_dir"
@@ -158,12 +169,19 @@ git -C "$repo_dir" rev-parse HEAD
 def _deploy_remote(cfg: TargetConfig, ref: str) -> dict[str, Any]:
     script = r"""
 set -euo pipefail
-repo_dir="$1"
-ref="$2"
-deploy_cmd="$3"
-health_cmd="$4"
-rollback_cmd_template="$5"
-allowed_branch="$6"
+decode_arg() {
+  python3 - "$1" <<'PY'
+import base64
+import sys
+print(base64.b64decode(sys.argv[1]).decode("utf-8"))
+PY
+}
+repo_dir="$(decode_arg "$1")"
+ref="$(decode_arg "$2")"
+deploy_cmd="$(decode_arg "$3")"
+health_cmd="$(decode_arg "$4")"
+rollback_cmd_template="$(decode_arg "$5")"
+allowed_branch="$(decode_arg "$6")"
 
 tail_summary() {
   python3 - "$1" <<'PY'
@@ -216,8 +234,16 @@ set +e
 deploy_log="$(bash -lc "$deploy_cmd" 2>&1)"
 deploy_status=$?
 if [ "$deploy_status" -eq 0 ]; then
-  health_log="$(bash -lc "$health_cmd" 2>&1)"
-  health_status=$?
+  health_deadline=$((SECONDS + 90))
+  health_status=1
+  while [ "$SECONDS" -le "$health_deadline" ]; do
+    health_log="$(bash -lc "$health_cmd" 2>&1)"
+    health_status=$?
+    if [ "$health_status" -eq 0 ]; then
+      break
+    fi
+    sleep 3
+  done
 fi
 
 if [ "$deploy_status" -ne 0 ] || [ "$health_status" -ne 0 ]; then
@@ -253,18 +279,15 @@ result = {
 print(json.dumps(result, ensure_ascii=False))
 PY
 """
-    proc = subprocess.run(
-        ["ssh", cfg.ssh_alias, "bash", "-s", "--",
-         cfg.project.directory,
-         ref,
-         cfg.project.deploy_command,
-         cfg.project.healthcheck_command,
-         cfg.project.rollback_command,
-         cfg.project.branch],
-        input=script,
-        text=True,
-        capture_output=True,
-        check=False,
+    proc = _run_ssh(
+        cfg.ssh_alias,
+        script,
+        cfg.project.directory,
+        ref,
+        cfg.project.deploy_command,
+        cfg.project.healthcheck_command,
+        cfg.project.rollback_command,
+        cfg.project.branch,
     )
     if proc.returncode != 0:
         details = (proc.stderr or proc.stdout).strip() or "remote deployment failed"

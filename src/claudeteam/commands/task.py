@@ -5,6 +5,7 @@
   task list              [--status S] [--assignee A]
   task get <id>
   task done <id>          (alias for `update <id> --status 已完成`)
+  task dispatch-next <assignee> [--by <agent>] [--force]
   task pause <id>         [--note <why>] [--to <who>] [--by <agent>]
   task approve <id>       [--done]
   task reject <id> <feedback> [--cancel]
@@ -28,6 +29,7 @@ USAGE = (
     "  claudeteam task list  [--status S] [--assignee A]\n"
     "  claudeteam task get <id>\n"
     "  claudeteam task done <id>\n"
+    "  claudeteam task dispatch-next <assignee> [--by <agent>] [--force]\n"
     "  claudeteam task pause <id> [--note <why>] [--to <who>] [--by <agent>]\n"
     "  claudeteam task approve <id> [--done] [--note <裁决内容>]\n"
     "  claudeteam task reject <id> <feedback> [--cancel]\n"
@@ -146,6 +148,21 @@ def _mem_title(t: dict | None) -> str:
     return f"{t.get('id', '')} {title}".strip()
 
 
+def _seal_if_terminal(t: dict | None) -> None:
+    """Best-effort backend closeout for terminal tasks.
+
+    Terminal status already removes a task from the active identity anchor.
+    Clearing unread inbox rows for the same T-n prevents stale dispatches or
+    supplements from being re-read as fresh context on the next wake.
+    """
+    if not t or t.get("status") not in tasks.TERMINAL_STATUSES:
+        return
+    try:
+        local_facts.mark_task_read(t.get("id", ""), agent=t.get("assignee", ""))
+    except Exception:
+        pass
+
+
 def _cmd_create(rest: list[str]) -> int:
     by = pop_flag(rest, "--by") or ""
     desc = pop_flag(rest, "--desc") or ""
@@ -193,6 +210,7 @@ def _cmd_update(rest: list[str]) -> int:
             and (not before or before.get("status") != "已完成")):
         _auto_memory(after.get("assignee", ""), "task_completed",
                      f"{_mem_title(after)} 已完成", ref=tid)
+    _seal_if_terminal(after)
     print(f"✅ updated {tid}")
     return 0
 
@@ -201,6 +219,38 @@ def _cmd_done(rest: list[str]) -> int:
     if len(rest) < 1:
         return usage_error(USAGE)
     return _cmd_update([rest[0], "--status", "已完成"])
+
+
+def _cmd_dispatch_next(rest: list[str]) -> int:
+    by = pop_flag(rest, "--by") or "manager"
+    force = pop_bool_flag(rest, "--force")
+    if len(rest) < 1:
+        return usage_error(USAGE)
+    assignee = rest[0]
+    state, task = tasks.claim_next(assignee, allow_busy=force)
+    if state == "busy":
+        assert task is not None
+        print(f"⏳ {assignee} busy on {task['id']}: {task.get('title', '')}")
+        return 0
+    if state == "empty":
+        print(f"📭 no pending task for {assignee}")
+        return 0
+    assert task is not None
+    message = task.get("description") or task.get("title", "")
+    if task.get("id") and task.get("title"):
+        message = f"{task['id']} {task['title']}\n\n{message}".strip()
+    try:
+        from claudeteam.commands import send as send_cmd
+        rc = send_cmd.main([assignee, by, message, "高", "--task", task["id"]])
+        if rc != 0:
+            return rc
+    except Exception as e:
+        return error_exit(f"❌ dispatched state updated but send failed: {e}")
+    _refresh_anchor(assignee)
+    local_facts.append_log(by, "task_dispatch",
+                           f"{task['id']} dispatched to {assignee}", ref=task["id"])
+    print(f"🚚 dispatched {task['id']} → {assignee}")
+    return 0
 
 
 def _cmd_list(rest: list[str]) -> int:
@@ -275,6 +325,7 @@ def _cmd_approve(rest: list[str]) -> int:
     if done and t.get("status") == "已完成":
         _auto_memory(t.get("assignee", ""), "task_completed",
                      f"{_mem_title(t)} 已批准完成", ref=tid)
+    _seal_if_terminal(t)
     print(f"✅ approved {tid} → {t['status']}")
     return 0
 
@@ -294,6 +345,7 @@ def _cmd_reject(rest: list[str]) -> int:
     local_facts.append_message(t["assignee"], "user",
                                f"{tid} {verb}: {feedback}", task_id=tid)
     _refresh_anchor(t["assignee"])
+    _seal_if_terminal(t)
     print(f"↩️  rejected {tid} → {t['status']}")
     return 0
 
@@ -313,6 +365,7 @@ def _cmd_void(rest: list[str]) -> int:
     local_facts.append_log(t["assignee"], "task_transition",
                            f"{tid} {prev}→已取消 (void){suffix}", ref=tid)
     _refresh_anchor(t["assignee"])
+    _seal_if_terminal(t)
     print(f"🗑️  voided {tid} → 已取消")
     return 0
 
@@ -351,6 +404,7 @@ SUBCOMMANDS = {
     "create":  _cmd_create,
     "update":  _cmd_update,
     "done":    _cmd_done,
+    "dispatch-next": _cmd_dispatch_next,
     "list":    _cmd_list,
     "get":     _cmd_get,
     "pause":   _cmd_pause,

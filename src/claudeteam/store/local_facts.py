@@ -102,6 +102,33 @@ def mark_read(local_id: str) -> bool:
     return False
 
 
+def mark_task_read(task_id: str, *, agent: str = "") -> int:
+    """Mark unread inbox messages for a completed task as read.
+
+    This is the backend "seal the box" step: once a T-n is terminal, stale
+    dispatch/supplement messages should stop resurfacing as fresh context.
+    """
+    if not task_id:
+        return 0
+    with _locked():
+        path = _inbox_file()
+        data = read_json(path, {"messages": []})
+        changed = 0
+        now = now_ms()
+        for msg in data.get("messages", []):
+            if msg.get("task_id") != task_id:
+                continue
+            if agent and msg.get("to") != agent:
+                continue
+            if not msg.get("read"):
+                msg["read"] = True
+                msg["read_at"] = now
+                changed += 1
+        if changed:
+            write_json(path, data)
+        return changed
+
+
 # ── status ────────────────────────────────────────────────────────────
 
 

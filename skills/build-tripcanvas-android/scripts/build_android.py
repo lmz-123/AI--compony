@@ -32,6 +32,11 @@ class BuildError(RuntimeError):
     pass
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class GitHub:
     def __init__(self, token: str, owner: str, repository: str):
         self.token = token
@@ -91,7 +96,44 @@ class GitHub:
 
     def download(self, artifact_id: int, destination: Path) -> None:
         path = f"{self.repo_path}/actions/artifacts/{artifact_id}/zip"
-        with self._request("GET", path, accept="application/octet-stream") as response:
+        req = urllib.request.Request(
+            API_ROOT + path,
+            method="GET",
+            headers={
+                "Accept": "application/octet-stream",
+                "Authorization": f"Bearer {self.token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "ai-company-tripcanvas-builder",
+            },
+        )
+        opener = urllib.request.build_opener(NoRedirectHandler)
+        try:
+            response = opener.open(req, timeout=60)
+        except urllib.error.HTTPError as e:
+            if e.code not in (301, 302, 303, 307, 308):
+                try:
+                    detail = json.loads(e.read(4096).decode("utf-8", "replace")).get("message", "")
+                except (ValueError, OSError):
+                    detail = ""
+                raise BuildError(f"GitHub artifact API {e.code}: {detail or e.reason}") from None
+            location = e.headers.get("Location")
+            if not location:
+                raise BuildError("GitHub artifact redirect did not include a Location header") from None
+            storage_req = urllib.request.Request(
+                location,
+                method="GET",
+                headers={"User-Agent": "ai-company-tripcanvas-builder"},
+            )
+            try:
+                response = urllib.request.urlopen(storage_req, timeout=120)
+            except urllib.error.HTTPError as storage_error:
+                raise BuildError(
+                    f"GitHub artifact storage download failed: HTTP {storage_error.code} {storage_error.reason}") from None
+            except urllib.error.URLError as storage_error:
+                raise BuildError(f"GitHub artifact storage download failed: {storage_error.reason}") from None
+        except urllib.error.URLError as e:
+            raise BuildError(f"GitHub artifact API request failed: {e.reason}") from None
+        with response:
             total = 0
             with destination.open("xb") as output:
                 while True:

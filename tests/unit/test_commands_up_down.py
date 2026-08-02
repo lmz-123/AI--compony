@@ -112,6 +112,50 @@ def test_up_starts_session_and_spawns_two_daemons():
         assert ["claudeteam", "watchdog"] in popen_calls
 
 
+def test_up_does_not_roll_call_by_default():
+    from claudeteam.commands import up
+    team = {"session": "S",
+            "agents": {"manager": {"cli": "claude-code"}}}
+    called = []
+    extras = tmux_patch(
+        new_session=lambda *a, **kw: True,
+        new_window=lambda *a, **kw: True,
+        spawn_agent=lambda *a, **kw: True,
+        capture_pane=lambda target, lines=80: "bypass permissions on\n? for shortcuts\n>",
+        inject=lambda *a, **kw: True,
+    )
+    with isolated_env(team=team, runtime_config={"chat_id": "oc_test"}), _fake_tmux(session_alive=False), \
+            _fake_popen(), _fake_alive([False, False]), extras, \
+            attr_patch(up, _summon_roster=lambda: called.append(True)):
+        rc, out, _ = run_cli(["up"])
+    assert rc == 0
+    assert "team up" in out
+    assert called == []
+    assert "全员点名" not in out
+
+
+def test_up_roll_call_when_enabled_in_toml():
+    from claudeteam.commands import up
+    team = {"session": "S",
+            "agents": {"manager": {"cli": "claude-code"}}}
+    called = []
+    extras = tmux_patch(
+        new_session=lambda *a, **kw: True,
+        new_window=lambda *a, **kw: True,
+        spawn_agent=lambda *a, **kw: True,
+        capture_pane=lambda target, lines=80: "bypass permissions on\n? for shortcuts\n>",
+        inject=lambda *a, **kw: True,
+    )
+    with isolated_env(team=team, runtime_config={"chat_id": "oc_test"}) as tmp, \
+            _fake_tmux(session_alive=False), _fake_popen(), _fake_alive([False, False]), extras, \
+            attr_patch(up, _summon_roster=lambda: called.append(True)):
+        (tmp / "claudeteam.toml").write_text("[startup]\nroll_call = true\n", encoding="utf-8")
+        rc, out, _ = run_cli(["up"])
+    assert rc == 0
+    assert called == [True]
+    assert "全员点名" in out
+
+
 def test_up_skips_session_when_already_running():
     team = {"session": "S", "agents": {"manager": {}}}
     with isolated_env(team=team, runtime_config={"chat_id": "oc_test"}), _fake_tmux(session_alive=True), \

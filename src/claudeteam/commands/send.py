@@ -1,4 +1,4 @@
-"""`claudeteam send <to> <from> <message> [priority] [--no-inject]`
+"""`claudeteam send <to> <from> <message> [priority] [--task T-n] [--no-inject]`
 
 Append a message to the local inbox AND poke the recipient's tmux
 pane so they know to read it.
@@ -22,12 +22,12 @@ from claudeteam.agents import adapter_for_agent, identity as _identity
 from claudeteam.runtime import config, lifecycle, tmux, wake
 from claudeteam.store import local_facts
 from claudeteam.util import (
-    maybe_print_help, pop_bool_flag, reject_flag_as_agent, usage_error)
+    maybe_print_help, pop_bool_flag, pop_flag, reject_flag_as_agent, usage_error)
 
 
 USAGE = (
     "usage: claudeteam send <to> <from> <message> [priority] "
-    "[--no-inject]"
+    "[--task T-n] [--no-inject]"
 )
 
 
@@ -36,6 +36,7 @@ def main(argv: list[str]) -> int:
         return 0
     rest = list(argv)
     no_inject = pop_bool_flag(rest, "--no-inject")
+    task_id = pop_flag(rest, "--task") or ""
     if len(rest) < 3:
         return usage_error(USAGE)
     to, frm, message = rest[0], rest[1], rest[2]
@@ -44,7 +45,8 @@ def main(argv: list[str]) -> int:
         if (rc := reject_flag_as_agent(name, USAGE)) is not None:
             return rc
     local_facts.touch_heartbeat(frm)
-    local_id = local_facts.append_message(to, frm, message, priority=priority)
+    local_id = local_facts.append_message(to, frm, message, priority=priority,
+                                          task_id=task_id)
     print(f"📥 inbox: {to} ← {frm}  [local_id={local_id}]")
     if no_inject:
         return 0

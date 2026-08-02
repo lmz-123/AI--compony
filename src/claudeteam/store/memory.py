@@ -30,7 +30,7 @@ API surface:
   `list_recent(agent, *, limit=20)`          → list, oldest-first
   `clear(agent)`                              → drop all entries
   `clear_kind(agent, kind)`                   → drop one slice
-  `render_for_prompt(agent, *, limit=20)`     → markdown for init prompt
+  `render_for_prompt(agent, *, limit=10)`     → markdown for init prompt
   `all_agents_with_memory()`                  → iterator for /health audit
   `kinds_summary()` / `kinds_sorted()`        → KNOWN_KINDS pretty-prints
 """
@@ -289,7 +289,7 @@ def clear_kind(agent: str, kind: str) -> int:
         return dropped
 
 
-def render_for_prompt(agent: str, *, limit: int = 20) -> str:
+def render_for_prompt(agent: str, *, limit: int = 10) -> str:
     """Format `agent`'s recent memory as a markdown block suitable for
     injecting into the identity init prompt.
 

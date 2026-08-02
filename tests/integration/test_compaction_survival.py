@@ -1,5 +1,6 @@
-"""Layer A — automated, CI-runnable proof that a long-running task's verbatim
-intent survives context compaction (the /compact anti-drift guarantee).
+"""Layer A — automated, CI-runnable proof that a long-running task's active
+task brief survives context compaction without leaking the boss's full original
+ask into worker context.
 
 WHAT THIS LAYER PROVES (and what it deliberately doesn't)
 --------------------------------------------------------
@@ -11,23 +12,23 @@ the compacted transcript) and (2) the immutable intent store (`task intent
 get`). This harness models "the conversation/init-prompt got compacted away"
 by re-deriving the agent's loaded context *purely from those two durable
 channels* — exactly what Claude Code re-reads on the first post-compaction turn
-— and asserting the boss's verbatim ask is still byte-identical.
+— and asserting workers get the current task brief while the boss's verbatim ask
+stays out of always-loaded context.
 
 It canNOT prove the real model re-ingests the file; that is Layer B (container,
 real Claude Code, real `/compact` + `/clear`), run by qa — steps in
 `.claudeteam/agents/dev/proposal-compaction-survival-test.md`.
 
-OBJECTIVE JUDGES (all byte-exact on a canary nonce, no subjective "do you
-remember?"):
+OBJECTIVE JUDGES:
     A  承重墙在位   — harness reads the on-disk CLAUDE.md, asserts it carries
-                      the verbatim raw_text incl. the nonce + the drop-prone
-                      hard constraint.
-    B  store 现读   — `tasks.get_intent` returns the raw_text byte-identical
-                      after heavy task-field drift (the immutable ground truth).
+                      the current active task brief and does NOT carry the
+                      boss's full raw_text.
+    B  store 现读   — `tasks.get_intent` still returns the raw_text byte-identical
+                      when a worker truly needs explicit lookup.
     C  正确 task 态 — the active intent-task is recovered (not a stale/completed
                       sibling), via the task store.
 NEGATIVE CONTROLS (prove the assertions can actually fail → they discriminate):
-    - anchor-off: a non-active task does NOT leak its ask into the durable file.
+    - anchor-off: a non-active task does NOT leak its ask/brief into the durable file.
     - done-drop : once the task completes, its now-stale ask vanishes from the
                   durable file (freshness — directly exercises the on-disk
                   refresh wiring).
@@ -62,7 +63,14 @@ def _claude_md(agent: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_verbatim_intent_survives_simulated_compaction():
+def _anchor_section(text: str) -> str:
+    if "## Active task anchor (brief only)" not in text:
+        return ""
+    tail = text.split("## Active task anchor (brief only)", 1)[1]
+    return tail.split("## Memory maintenance", 1)[0]
+
+
+def test_active_brief_survives_simulated_compaction_without_verbatim_leak():
     """Full Layer-A loop: an online worker on a long, drifting task; after we
     model the compaction (re-read durable channels only), all three objective
     judges hold byte-for-byte."""
@@ -86,20 +94,23 @@ def test_verbatim_intent_survives_simulated_compaction():
         # ③ THE COMPACTION MODEL: ignore every prior prompt / transcript; re-read
         #    only the durable channels Claude Code would see post-/compact.
 
-        # Judge A — 承重墙在位: durable file carries the verbatim ask
+        # Judge A — 承重墙在位: durable file carries the active brief only.
         cm = _claude_md("worker_cc")
-        assert NONCE in cm
-        assert RAW in cm                       # byte-identical, whole string
-        assert CONSTRAINT in cm                # the drop-prone detail survived
+        anchor = _anchor_section(cm)
+        assert anchor
+        assert "两步结账即可" in anchor         # manager/task brief survived
+        assert "intent I-1" in anchor
+        assert NONCE not in anchor             # boss raw_text does not leak
+        assert RAW not in anchor
+        assert CONSTRAINT not in anchor
 
-        # Judge B — store 现读 ground truth unscathed by the drift
+        # Judge B — store 现读 ground truth remains available on explicit lookup.
         assert tasks.get_intent("I-1")["raw_text"] == RAW
 
         # Judge C — recovered to the correct active task
         t = tasks.get("T-1")
         assert t["status"] == "进行中" and t["intent_id"] == "I-1"
-        # drift lived only in mutable task fields, never in the anchored ask
-        assert "支付改造" not in cm
+        assert "支付改造" in anchor
 
 
 def test_negative_control_inactive_task_leaks_no_verbatim():
@@ -126,7 +137,10 @@ def test_completed_task_drops_verbatim_from_durable_file():
         run_cli(["task", "intent", "create", RAW])
         run_cli(["task", "create", "worker_cc", "重构", "--intent", "I-1"])
         run_cli(["task", "update", "T-1", "--status", "进行中"])
-        assert NONCE in _claude_md("worker_cc")          # active → anchored
+        active_anchor = _anchor_section(_claude_md("worker_cc"))
+        assert active_anchor
+        assert "重构" in active_anchor
+        assert NONCE not in active_anchor                # raw stays out
 
         run_cli(["task", "update", "T-1", "--status", "已完成"])
         cm = _claude_md("worker_cc")
@@ -153,6 +167,10 @@ def test_recovers_active_intent_not_stale_completed_sibling():
         run_cli(["task", "update", "T-2", "--status", "已完成"])
 
         cm = _claude_md("worker_cc")
-        assert NONCE in cm and RAW in cm          # active ask present
-        assert "ANCHOR-OTHER-9999" not in cm      # completed ask absent
-        assert other not in cm
+        anchor = _anchor_section(cm)
+        assert anchor
+        assert "结账" in anchor and "intent I-1" in anchor  # active task brief present
+        assert NONCE not in anchor and RAW not in anchor    # boss raw_text not injected
+        assert "ANCHOR-OTHER-9999" not in anchor            # completed ask absent
+        assert other not in anchor
+        assert "首页" not in anchor                         # completed task brief absent
