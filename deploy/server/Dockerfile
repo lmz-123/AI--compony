@@ -36,7 +36,8 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir "setuptools>=68" \
+    && pip install --no-cache-dir --no-build-isolation -e .
 
 COPY scripts/feishu_channel/ ./scripts/feishu_channel/
 RUN cd scripts/feishu_channel \
