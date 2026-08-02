@@ -297,10 +297,20 @@ def test_init_prompt_teaches_inbox_processing_after_R168():
         # sweeping every unread item into one worker turn.
         assert "Process inbox with task isolation" in prompt
         assert "leave it unread and tell manager you are busy" in prompt
+        assert "do not repost it to chat on init/reidentify" in prompt
         # Tells agent to use claudeteam say for status reports
         assert "claudeteam say worker_cc" in prompt
         # Tells agent to mark each message read
         assert "claudeteam read" in prompt
+
+
+def test_manager_init_prompt_blocks_rebroadcast_of_stale_history():
+    """Manager wake prompt must explicitly suppress replaying historical
+    ready/report-in/summary chatter when unread inbox leftovers exist."""
+    with isolated_env():
+        prompt = identity.init_prompt("manager")
+        assert "never rebroadcast historical ready/report-in/roll-call/summary messages" in prompt
+        assert "Only post if the message is still actionable for the current round." in prompt
 
 
 def test_init_prompt_appends_memory_when_present():
