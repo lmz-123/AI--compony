@@ -22,7 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - py39/py310 fallback
     import tomli as tomllib  # type: ignore
 
 
-CONFIG_PATH = Path("/data/deploy-targets.toml")
+DEFAULT_CONFIG_PATH = Path("/data/deploy-targets.toml")
 
 
 class DeployError(RuntimeError):
@@ -57,11 +57,11 @@ def _tail_summary(text: str, *, max_lines: int = 3, max_chars: int = 400) -> str
     return summary[-max_chars:]
 
 
-def _load_config() -> dict[str, Any]:
+def _load_config(config_path: Path) -> dict[str, Any]:
     try:
-        data = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise DeployError(f"Cannot read deploy target config: {CONFIG_PATH} is missing.") from exc
+        raise DeployError(f"Cannot read deploy target config: {config_path} is missing.") from exc
     except OSError as exc:
         raise DeployError(f"Cannot read deploy target config: {exc}") from exc
     except tomllib.TOMLDecodeError as exc:
@@ -71,10 +71,10 @@ def _load_config() -> dict[str, Any]:
     return data
 
 
-def _as_str(mapping: dict[str, Any], key: str) -> str:
+def _as_str(mapping: dict[str, Any], key: str, config_path: Path) -> str:
     value = mapping.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise DeployError(f"Missing or invalid `{key}` in {CONFIG_PATH}.")
+        raise DeployError(f"Missing or invalid `{key}` in {config_path}.")
     return value.strip()
 
 
@@ -99,21 +99,21 @@ def _resolve_target(data: dict[str, Any], target_name: str, project_name: str) -
     raise DeployError(f"Unknown deployment target `{target_name}`.")
 
 
-def _build_target_config(raw: dict[str, Any], raw_project: dict[str, Any]) -> TargetConfig:
+def _build_target_config(raw: dict[str, Any], raw_project: dict[str, Any], config_path: Path) -> TargetConfig:
     project = ProjectConfig(
-        name=_as_str(raw_project, "name"),
-        repository=_as_str(raw_project, "repository"),
-        directory=_as_str(raw_project, "directory"),
-        branch=_as_str(raw_project, "branch"),
-        deploy_command=_as_str(raw_project, "deploy_command"),
-        healthcheck_command=_as_str(raw_project, "healthcheck_command"),
-        rollback_command=_as_str(raw_project, "rollback_command"),
+        name=_as_str(raw_project, "name", config_path),
+        repository=_as_str(raw_project, "repository", config_path),
+        directory=_as_str(raw_project, "directory", config_path),
+        branch=_as_str(raw_project, "branch", config_path),
+        deploy_command=_as_str(raw_project, "deploy_command", config_path),
+        healthcheck_command=_as_str(raw_project, "healthcheck_command", config_path),
+        rollback_command=_as_str(raw_project, "rollback_command", config_path),
     )
     return TargetConfig(
-        name=_as_str(raw, "name"),
-        environment=_as_str(raw, "environment"),
-        ssh_alias=_as_str(raw, "ssh_alias"),
-        base_dir=_as_str(raw, "base_dir"),
+        name=_as_str(raw, "name", config_path),
+        environment=_as_str(raw, "environment", config_path),
+        ssh_alias=_as_str(raw, "ssh_alias", config_path),
+        base_dir=_as_str(raw, "base_dir", config_path),
         project=project,
     )
 
@@ -163,6 +163,21 @@ ref="$2"
 deploy_cmd="$3"
 health_cmd="$4"
 rollback_cmd_template="$5"
+allowed_branch="$6"
+
+tail_summary() {
+  python3 - "$1" <<'PY'
+import sys
+
+text = sys.argv[1]
+cleaned = [line.strip() for line in text.splitlines() if line.strip()]
+if not cleaned:
+    print("")
+else:
+    summary = " | ".join(cleaned[-3:])
+    print(summary[-400:])
+PY
+}
 
 cd "$repo_dir"
 
@@ -176,6 +191,16 @@ fi
 if [ -z "$resolved_ref" ]; then
   echo "ERROR: unable to resolve ref ${ref}" >&2
   exit 30
+fi
+
+allowed_tip="$(git rev-parse --verify --quiet "origin/${allowed_branch}^{commit}" || true)"
+if [ -z "$allowed_tip" ]; then
+  echo "ERROR: unable to resolve allowed branch origin/${allowed_branch}" >&2
+  exit 31
+fi
+if ! git merge-base --is-ancestor "$resolved_ref" "$allowed_tip"; then
+  echo "ERROR: ref ${ref} (${resolved_ref}) is not contained in origin/${allowed_branch}" >&2
+  exit 32
 fi
 
 git checkout --detach "$resolved_ref"
@@ -202,22 +227,18 @@ if [ "$deploy_status" -ne 0 ] || [ "$health_status" -ne 0 ]; then
 fi
 set -e
 
-export DEPLOY_LOG="$deploy_log"
-export HEALTH_LOG="$health_log"
-export ROLLBACK_LOG="$rollback_log"
+deploy_summary="$(tail_summary "$deploy_log")"
+health_summary="$(tail_summary "$health_log")"
+rollback_summary="$(tail_summary "$rollback_log")"
+
+export DEPLOY_SUMMARY="$deploy_summary"
+export HEALTH_SUMMARY="$health_summary"
+export ROLLBACK_SUMMARY="$rollback_summary"
 
 python3 - "$resolved_ref" "$current_head" "$deploy_status" "$health_status" "$rollback_status" <<'PY'
 import json
 import os
 import sys
-
-
-def tail_summary(text: str, max_lines: int = 3, max_chars: int = 400) -> str:
-    cleaned = [line.strip() for line in text.splitlines() if line.strip()]
-    if not cleaned:
-        return ""
-    summary = " | ".join(cleaned[-max_lines:])
-    return summary[-max_chars:]
 
 result = {
     "resolved_ref": sys.argv[1],
@@ -225,9 +246,9 @@ result = {
     "deploy_status": int(sys.argv[3]),
     "health_status": int(sys.argv[4]),
     "rollback_status": int(sys.argv[5]),
-    "deploy_error_summary": tail_summary(os.environ.get("DEPLOY_LOG", "")),
-    "health_error_summary": tail_summary(os.environ.get("HEALTH_LOG", "")),
-    "rollback_error_summary": tail_summary(os.environ.get("ROLLBACK_LOG", "")),
+    "deploy_error_summary": os.environ.get("DEPLOY_SUMMARY", ""),
+    "health_error_summary": os.environ.get("HEALTH_SUMMARY", ""),
+    "rollback_error_summary": os.environ.get("ROLLBACK_SUMMARY", ""),
 }
 print(json.dumps(result, ensure_ascii=False))
 PY
@@ -238,7 +259,8 @@ PY
          ref,
          cfg.project.deploy_command,
          cfg.project.healthcheck_command,
-         cfg.project.rollback_command],
+         cfg.project.rollback_command,
+         cfg.project.branch],
         input=script,
         text=True,
         capture_output=True,
@@ -302,6 +324,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project", required=True, help="Project name under the chosen target")
     parser.add_argument("--ref", required=True, help="Verified branch / tag / commit to deploy")
     parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to deploy-targets.toml (defaults to /data/deploy-targets.toml)",
+    )
+    parser.add_argument(
         "--allow-production",
         action="store_true",
         help="Required when the selected target is production and policy requires explicit approval.",
@@ -309,11 +336,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON summary")
     args = parser.parse_args(argv)
 
-    data = _load_config()
+    config_path = Path(args.config)
+    data = _load_config(config_path)
     policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}
     require_prod_approval = bool(policy.get("require_explicit_production_approval", False))
     raw_target, raw_project = _resolve_target(data, args.target, args.project)
-    cfg = _build_target_config(raw_target, raw_project)
+    cfg = _build_target_config(raw_target, raw_project, config_path)
 
     if (
         require_prod_approval
