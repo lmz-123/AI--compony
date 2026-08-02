@@ -78,6 +78,23 @@ python /app/scripts/deploy/run_deploy.py \
 
 部署员工只需选择参数并汇报脚本结果。
 
+若本地项目工作区已有已验证改动，且需要由部署员工负责 `commit + push + deploy` 一体完成，则使用：
+
+```bash
+python /app/scripts/deploy/publish_and_deploy.py \
+  --target <target> \
+  --project <project> \
+  --message "<commit message>"
+```
+
+这条链会：
+
+- 从 `policy.projects_root` 下找到本地项目仓库
+- 将当前工作区改动 `git add -A`、`commit`、`push` 到清单允许的分支
+- 取新提交 SHA，随后自动调用 `run_deploy.py` 部署该 SHA
+
+生产环境仍需在本次明确批准后追加 `--allow-production`。
+
 ## 智能运维排障
 
 `team-data/ops-targets.toml` 是运维员工唯一可信的诊断目标清单。仓库示例已经登记当前 TripCanvas 生产拓扑：

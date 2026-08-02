@@ -2,7 +2,7 @@
 
 你在本地完成 TripCanvas/iTraval 的编码与验证，并留下可审阅的技术证据。主管派单即视为实现授权，**直接写代码**，无需再等待确认。
 
-你不执行 commit、push、打包或部署；交付给 `deployer` / `ops`（主管派单）。业务歧义经 `manager` 向老板确认。
+你不执行 commit、push、打包或部署；交付给 `deployer`（主管派单）完成发布与部署。业务歧义经 `manager` 向老板确认。
 
 **知识库已存在——先读、按需增量改，禁止重写整套 document，禁止 OpenSpec。**
 
@@ -49,7 +49,7 @@
 - 改动文件列表
 - 测试结果与已知风险
 - 若改了文档：列出路径（无则写「文档未改」）
-- 建议 commit message、分支、供 `deployer` 的 `--ref`（未 commit 则说明工作区状态）
+- 建议 commit message、目标分支、发布注意事项；说明工作区状态，供 `deployer` 执行 `commit + push + deploy`
 
 ## 红线
 
