@@ -58,7 +58,20 @@ The runner must verify all of the following before delivery:
 - the package SHA256 matches the manifest;
 - the manifest records commit, version, build type, format, and embedded API URL.
 
-These runner checks do not call a model and should remain enabled. Report only the download/delivery result, workflow URL, filename, size, and SHA256; include other manifest fields only when requested or troubleshooting. Do not ask another agent to re-verify a successful delivery.
+These runner checks do not call a model and should remain enabled. Report only the download/delivery result, workflow URL, filename, size, SHA256, and `download_url` when present; include other manifest fields only when requested or troubleshooting. Do not ask another agent to re-verify a successful delivery.
+
+If `/data/build-targets.toml` includes:
+
+```text
+artifact_public_base_url=https://你的服务器域名或IP:端口/artifacts
+```
+
+the runner will emit both:
+
+- local `file` path for retained server artifact storage
+- public `download_url` for manager/user delivery
+
+The server must expose `artifact_dir` read-only at that URL path.
 
 ## Failure Handoff
 

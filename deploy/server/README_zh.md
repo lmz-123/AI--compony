@@ -153,7 +153,13 @@ Android 构建在 GitHub Actions 执行，服务器不安装 Flutter、JDK 或 A
 default_api_base_url = "https://你的TripCanvas接口域名"
 ```
 
-不能填写 `localhost` 或 `127.0.0.1`。默认只允许 `main` 和 debug APK；不要在尚未配置正式签名时打开 `allow_release`。
+不能填写 `localhost` 或 `127.0.0.1`。默认只允许 `main` 和 debug APK；不要在尚未配置正式签名时打开 `allow_release`。如果希望部署员工最终交付“服务器下载链接”，再额外配置：
+
+```toml
+artifact_public_base_url = "https://你的服务器域名或IP:端口/artifacts"
+```
+
+这样 Android 构建脚本会在结果里同时给出本地保存路径 `file` 和公网下载地址 `download_url`。
 
 在 `lmz-123/MyAPPs` 的 GitHub 仓库 Settings -> Secrets and variables -> Actions 中新增 `AMAP_ANDROID_KEY`。debug 和 release 都需要这个高德 Android Key；不要把它写进服务器 `.env`、`build-targets.toml`、代码仓库或飞书消息。
 

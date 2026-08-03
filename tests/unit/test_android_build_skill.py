@@ -94,6 +94,27 @@ def test_validate_rejects_phone_unreachable_localhost():
         assert "physical phone" in str(e)
 
 
+def test_build_download_url_returns_none_when_not_configured():
+    assert builder.build_download_url({}, "ct-test", "app.apk") is None
+
+
+def test_build_download_url_builds_public_link():
+    url = builder.build_download_url(
+        {"artifact_public_base_url": "https://downloads.example.com/artifacts"},
+        "ct-test",
+        "TripCanvas debug.apk",
+    )
+    assert url == "https://downloads.example.com/artifacts/ct-test/TripCanvas%20debug.apk"
+
+
+def test_build_download_url_rejects_invalid_base_url():
+    try:
+        builder.build_download_url({"artifact_public_base_url": "downloads.example.com"}, "ct-test", "app.apk")
+        assert False, "invalid base url should be rejected"
+    except builder.BuildError as e:
+        assert "artifact_public_base_url" in str(e)
+
+
 def test_extract_and_verify_accepts_matching_manifest_and_hash():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

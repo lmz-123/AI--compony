@@ -196,6 +196,17 @@ def validate(config: dict, target: dict, args: argparse.Namespace) -> tuple[str,
     return ref, api_url.rstrip("/"), artifact_dir
 
 
+def build_download_url(config: dict, request_id: str, package_name: str) -> str | None:
+    base_url = str(config.get("artifact_public_base_url", "") or "").strip()
+    if not base_url:
+        return None
+    if not re.fullmatch(r"https?://[^\s]+", base_url):
+        raise BuildError("artifact_public_base_url must be an absolute http(s) URL")
+    safe_request_id = urllib.parse.quote(request_id, safe="")
+    safe_package_name = urllib.parse.quote(package_name, safe="")
+    return f"{base_url.rstrip('/')}/{safe_request_id}/{safe_package_name}"
+
+
 def load_token(secret_name: str) -> str:
     if not re.fullmatch(r"[A-Z][A-Z0-9_]+", secret_name):
         raise BuildError("Invalid token_secret name")
@@ -347,6 +358,7 @@ def main() -> int:
             "commit": manifest.get("commit"),
             "version": manifest.get("version"),
             "file": str(package_path),
+            "download_url": build_download_url(config, request_id, package_path.name),
             "size_bytes": package_path.stat().st_size,
             "sha256": manifest.get("sha256"),
             "build_type": manifest.get("build_type"),

@@ -1,5 +1,6 @@
 version = 1
 artifact_dir = "/data/artifacts"
+artifact_public_base_url = ""
 token_secret = "GITHUB_TOKEN"
 
 [[targets]]
