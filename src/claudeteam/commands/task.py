@@ -1,7 +1,7 @@
 """`claudeteam task <subcommand>`
 
-  task create <assignee> <title> [--by <agent>] [--desc <text>] [--intent I-n]
-  task update <id>       [--status S] [--assignee A] [--title T] [--desc D]
+  task create <assignee> <title> [--by <agent>] [--desc <text>] [--intent I-n] [--auto-dispatch <agent>]
+  task update <id>       [--status S] [--assignee A] [--title T] [--desc D] [--auto-dispatch <agent>]
   task list              [--status S] [--assignee A]
   task get <id>
   task done <id>          (alias for `update <id> --status 已完成`)
@@ -24,8 +24,8 @@ from claudeteam.util import (
 
 USAGE = (
     "usage:\n"
-    "  claudeteam task create <assignee> <title> [--by <agent>] [--desc <text>] [--intent I-n]\n"
-    "  claudeteam task update <id>  [--status S] [--assignee A] [--title T] [--desc D]\n"
+    "  claudeteam task create <assignee> <title> [--by <agent>] [--desc <text>] [--intent I-n] [--auto-dispatch <agent>]\n"
+    "  claudeteam task update <id>  [--status S] [--assignee A] [--title T] [--desc D] [--auto-dispatch <agent>]\n"
     "  claudeteam task list  [--status S] [--assignee A]\n"
     "  claudeteam task get <id>\n"
     "  claudeteam task done <id>\n"
@@ -112,6 +112,13 @@ def _fmt_task(t: dict) -> list[str]:
         body.append(f"  intent: {t['intent_id']}")
     if t.get("description"):
         body.append(f"  desc: {t['description']}")
+    if t.get("auto_dispatch_assignee"):
+        body.append(f"  auto_dispatch: {t['auto_dispatch_assignee']}")
+    if t.get("status") == tasks.BACKGROUND_STATUS:
+        if t.get("background_note"):
+            body.append(f"  background: {t['background_note']}")
+        if t.get("background_by"):
+            body.append(f"  background_by: {t['background_by']}")
     if t.get("status") == tasks.SUSPEND_STATUS:
         body.append(f"  awaiting: {t.get('awaiting') or '-'}")
         if t.get("approval_note"):
@@ -211,17 +218,71 @@ def _notify_manager_followup(t: dict | None, message: str, *, sender: str = "") 
         pass
 
 
+def _dispatch_next_backend(assignee: str, *, by: str = "manager") -> tuple[str, dict | None]:
+    """Backend helper for queue advancement without re-parsing CLI args."""
+    state, task = tasks.claim_next(assignee, allow_busy=False)
+    if state != "claimed" or task is None:
+        return state, task
+    message = task.get("description") or task.get("title", "")
+    if task.get("id") and task.get("title"):
+        message = f"{task['id']} {task['title']}\n\n{message}".strip()
+    from claudeteam.commands import send as send_cmd
+    rc = send_cmd.main([assignee, by, message, "高", "--task", task["id"]])
+    if rc != 0:
+        tasks.update(task["id"], status="待处理")
+        return "send_failed", task
+    _refresh_anchor(assignee)
+    local_facts.append_log(by, "task_dispatch",
+                           f"{task['id']} dispatched to {assignee}", ref=task["id"])
+    return "claimed", task
+
+
+def _maybe_auto_dispatch_next(completed_task: dict | None) -> bool | None:
+    """Run a preplanned backend auto-dispatch if the completed task asks for it.
+
+    Returns:
+      - True: auto-dispatch succeeded; no extra completion receipt needed
+      - False: auto-dispatch was configured but failed; failure receipt already sent
+      - None: no auto-dispatch configured / not applicable; caller should emit
+              the normal completion receipt
+    """
+    if not completed_task or completed_task.get("status") != "已完成":
+        return None
+    target = (completed_task.get("auto_dispatch_assignee") or "").strip()
+    if not target:
+        return None
+    state, task = _dispatch_next_backend(target, by="manager")
+    if state == "claimed" and task:
+        local_facts.append_log("manager", "task_auto_dispatch",
+                               f"{completed_task.get('id', '')} 完成后自动续派 {task['id']} → {target}",
+                               ref=task["id"])
+        return True
+    problem = {
+        "busy": f"{target} 当前仍忙，未自动续派。",
+        "empty": f"{target} 没有待处理任务，未自动续派。",
+        "send_failed": f"{target} 自动续派发送失败，任务已回退待处理。",
+    }.get(state, f"{target} 自动续派异常（{state}）。")
+    _notify_manager_followup(
+        completed_task,
+        f"【自动续派异常】{completed_task.get('id', '')} 已完成，但后续自动续派失败：{problem}",
+        sender=completed_task.get("assignee", ""),
+    )
+    return False
+
+
 def _cmd_create(rest: list[str]) -> int:
     by = pop_flag(rest, "--by") or ""
     desc = pop_flag(rest, "--desc") or ""
     intent_id = pop_flag(rest, "--intent") or ""
+    auto_dispatch = pop_flag(rest, "--auto-dispatch") or ""
     if len(rest) < 2:
         return usage_error(USAGE)
     assignee = rest[0]
     title = " ".join(rest[1:])
     try:
         tid = tasks.create(assignee, title, description=desc, creator=by,
-                           intent_id=intent_id)
+                           intent_id=intent_id,
+                           auto_dispatch_assignee=auto_dispatch)
     except ValueError as e:
         return error_exit(f"❌ {e}")
     _refresh_anchor(assignee)
@@ -236,13 +297,15 @@ def _cmd_update(rest: list[str]) -> int:
     assignee = pop_flag(rest, "--assignee")
     title = pop_flag(rest, "--title")
     desc = pop_flag(rest, "--desc")
+    auto_dispatch = pop_flag(rest, "--auto-dispatch")
     if len(rest) < 1:
         return usage_error(USAGE)
     tid = rest[0]
     before = tasks.get(tid)
     try:
         ok = tasks.update(tid, status=status, assignee=assignee,
-                          title=title, description=desc)
+                          title=title, description=desc,
+                          auto_dispatch_assignee=auto_dispatch)
     except ValueError as e:
         return error_exit(f"❌ {e}")
     if not ok:
@@ -258,11 +321,12 @@ def _cmd_update(rest: list[str]) -> int:
             and (not before or before.get("status") != "已完成")):
         _auto_memory(after.get("assignee", ""), "task_completed",
                      f"{_mem_title(after)} 已完成", ref=tid)
-        _notify_manager_followup(
-            after,
-            f"【任务完成回执】{tid} 已完成：{after.get('title', '')}（assignee={after.get('assignee', '')}）。",
-            sender=after.get("assignee", ""),
-        )
+        if _maybe_auto_dispatch_next(after) is None:
+            _notify_manager_followup(
+                after,
+                f"【任务完成回执】{tid} 已完成：{after.get('title', '')}（assignee={after.get('assignee', '')}）。",
+                sender=after.get("assignee", ""),
+            )
     _seal_if_terminal(after)
     print(f"✅ updated {tid}")
     return 0
@@ -296,8 +360,10 @@ def _cmd_dispatch_next(rest: list[str]) -> int:
         from claudeteam.commands import send as send_cmd
         rc = send_cmd.main([assignee, by, message, "高", "--task", task["id"]])
         if rc != 0:
+            tasks.update(task["id"], status="待处理")
             return rc
     except Exception as e:
+        tasks.update(task["id"], status="待处理")
         return error_exit(f"❌ dispatched state updated but send failed: {e}")
     _refresh_anchor(assignee)
     local_facts.append_log(by, "task_dispatch",
@@ -378,11 +444,12 @@ def _cmd_approve(rest: list[str]) -> int:
     if done and t.get("status") == "已完成":
         _auto_memory(t.get("assignee", ""), "task_completed",
                      f"{_mem_title(t)} 已批准完成", ref=tid)
-        _notify_manager_followup(
-            t,
-            f"【任务完成回执】{tid} 已批准完成：{t.get('title', '')}（assignee={t.get('assignee', '')}）{suffix}。",
-            sender=t.get("assignee", ""),
-        )
+        if _maybe_auto_dispatch_next(t) is None:
+            _notify_manager_followup(
+                t,
+                f"【任务完成回执】{tid} 已批准完成：{t.get('title', '')}（assignee={t.get('assignee', '')}）{suffix}。",
+                sender=t.get("assignee", ""),
+            )
     else:
         _notify_manager_followup(
             t,

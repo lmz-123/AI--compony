@@ -32,6 +32,14 @@ def test_task_create_with_by_and_desc():
         assert t["description"] == "root cause Y"
 
 
+def test_task_create_with_auto_dispatch():
+    with isolated_env():
+        run_cli(["task", "create", "worker", "task name",
+              "--auto-dispatch", "deployer"])
+        t = tasks.list_tasks()[0]
+        assert t["auto_dispatch_assignee"] == "deployer"
+
+
 def test_task_create_missing_args_returns_one():
     with isolated_env():
         rc, _, err = run_cli(["task", "create", "worker"])
@@ -74,6 +82,14 @@ def test_task_update_can_reassign_and_retitle():
         assert t["title"] == "new"
 
 
+def test_task_update_can_change_auto_dispatch():
+    with isolated_env():
+        tasks.create("w1", "old")
+        run_cli(["task", "update", "T-1", "--auto-dispatch", "deployer"])
+        t = tasks.get("T-1")
+        assert t["auto_dispatch_assignee"] == "deployer"
+
+
 # ── done shortcut ────────────────────────────────────────────────
 
 
@@ -100,6 +116,47 @@ def test_task_done_notifies_manager_and_suggests_next_dispatch():
         assert "任务完成回执" in content
         assert "T-2 second" in content
         assert "dispatch-next w --by manager" in content
+
+
+def test_task_done_auto_dispatches_next_worker_task_without_manager_receipt():
+    with isolated_env():
+        run_cli(["task", "create", "developer", "dev done",
+                 "--by", "manager", "--auto-dispatch", "deployer"])
+        run_cli(["task", "create", "deployer", "deploy it", "--by", "manager"])
+        run_cli(["task", "update", "T-1", "--status", "进行中"])
+        rc, _, _ = run_cli(["task", "done", "T-1"])
+        assert rc == 0
+        assert tasks.get("T-2")["status"] == "进行中"
+        deployer_msgs = [m for m in local_facts.list_messages("deployer")
+                         if m["task_id"] == "T-2"]
+        assert deployer_msgs
+        manager_msgs = [m for m in local_facts.list_messages("manager")
+                        if m["task_id"] == "T-1"]
+        assert not manager_msgs
+
+
+def test_task_done_auto_dispatch_failure_notifies_manager():
+    with isolated_env(), attr_patch(task_cmd, _dispatch_next_backend=lambda assignee, by="manager": ("empty", None)):
+        run_cli(["task", "create", "developer", "dev done",
+                 "--by", "manager", "--auto-dispatch", "deployer"])
+        run_cli(["task", "update", "T-1", "--status", "进行中"])
+        rc, _, _ = run_cli(["task", "done", "T-1"])
+        assert rc == 0
+        manager_msgs = [m for m in local_facts.list_messages("manager")
+                        if m["task_id"] == "T-1"]
+        assert manager_msgs
+        assert "自动续派异常" in manager_msgs[-1]["content"]
+
+
+def test_task_dispatch_next_send_failure_requeues_task():
+    with isolated_env():
+        tasks.create("w", "x")
+        with attr_patch(task_cmd, _refresh_anchor=lambda *agents: None):
+            from claudeteam.commands import send as send_cmd
+            with attr_patch(send_cmd, main=lambda argv: 1):
+                rc, _, _ = run_cli(["task", "dispatch-next", "w", "--by", "manager"])
+        assert rc == 1
+        assert tasks.get("T-1")["status"] == "待处理"
 
 
 # ── list / get ────────────────────────────────────────────────────
@@ -224,6 +281,21 @@ def test_task_approve_done():
         rc, _, _ = run_cli(["task", "approve", "T-1", "--done"])
         assert rc == 0
         assert tasks.get("T-1")["status"] == "已完成"
+
+
+def test_task_approve_done_auto_dispatches_next_worker_task():
+    with isolated_env():
+        run_cli(["task", "create", "developer", "dev done",
+                 "--by", "manager", "--auto-dispatch", "deployer"])
+        run_cli(["task", "create", "deployer", "deploy it", "--by", "manager"])
+        run_cli(["task", "update", "T-1", "--status", "进行中"])
+        run_cli(["task", "pause", "T-1"])
+        rc, _, _ = run_cli(["task", "approve", "T-1", "--done"])
+        assert rc == 0
+        assert tasks.get("T-2")["status"] == "进行中"
+        manager_msgs = [m for m in local_facts.list_messages("manager")
+                        if m["task_id"] == "T-1"]
+        assert not manager_msgs
 
 
 def test_task_approve_note_reaches_receipt_and_audit():

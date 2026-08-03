@@ -94,10 +94,13 @@ def main(argv: list[str]) -> int:
                 on_woken=lambda: local_facts.upsert_status(
                     to, "进行中", "responding to first message"),
             )
+        if to == "manager":
+            next_step = f"`claudeteam say {to} \"...\" --to user`"
+        else:
+            next_step = f"`claudeteam send manager {to} \"...\"`"
         nudge = (f"📥 {frm} → {to}（{local_id}）。"
                  f"`claudeteam inbox {to}` → 处理 → "
-                 f"`claudeteam read {local_id}` → 必要时 "
-                 f"`claudeteam say {to} \"...\" --to user`。")
+                 f"`claudeteam read {local_id}` → 默认 {next_step}。")
         tmux.inject(target, nudge, submit_keys=adapter.submit_keys())
     except Exception as e:
         print(f"  ⚠️ tmux inject best-effort failed for {to}: {e}")

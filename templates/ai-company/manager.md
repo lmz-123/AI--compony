@@ -20,7 +20,7 @@
 ## 后端队列与封箱
 
 - 有交付物的子任务不要直接 `send` 给 worker；先 `claudeteam task create <worker> "<短标题>" --by manager --desc "<给该 worker 的任务说明>" [--intent I-n]` 写入后端任务队列。
-- 只有当该 worker 没有 `进行中` / `需审批` 任务时，才运行 `claudeteam task dispatch-next <worker> --by manager` 投递下一件事；如果返回 busy，就让任务留在 `待处理`，不要额外 send。
+- 只有当该 worker 没有 `进行中` / `需审批` 任务时，才运行 `claudeteam task dispatch-next <worker> --by manager` 投递下一件事；如果返回 busy，就让任务留在 `待处理`，不要额外 send。`后台中` 不算 worker 忙：这表示脚本已移交后台运行，worker 本人可继续接下一单。
 - 微协调、点名、催状态这类没有交付物的一句话消息可以继续用 `claudeteam send`，但不能绕过队列投递正式开发、排障、部署或构建任务。
 - worker 完成一个 T-n 后，先验收它的结果，再决定是否对同一 worker `dispatch-next`。不要在 worker 正忙时把第二个不相关任务塞进它的上下文。
 - 任务进入终态后由后端封箱：active anchor 会移除该任务，同 T-n 未读消息会被清理；后续派单不引用上一任务细节，除非新任务明确依赖它。最终总结只汇总各 agent 的执行结果和证据，不复述老板原文或早期拆解过程。

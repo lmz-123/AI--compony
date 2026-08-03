@@ -68,7 +68,7 @@ def _agent_pane_state(session: str, agent: str, cfg: dict, *, session_alive: boo
 
 def _tasks_by_assignee(agent: str) -> dict[str, Any]:
     rows = tasks.list_tasks(assignee=agent)
-    active = [t for t in rows if t.get("status") in {"进行中", "需审批"}]
+    active = [t for t in rows if t.get("status") in {"进行中", "需审批", "后台中"}]
     pending = [t for t in rows if t.get("status") == "待处理"]
     return {
         "active_task": active[0]["id"] if active else "",
@@ -133,6 +133,7 @@ def snapshot() -> dict[str, Any]:
     queue = {
         "pending": sum(1 for t in all_tasks if t.get("status") == "待处理"),
         "in_progress": sum(1 for t in all_tasks if t.get("status") == "进行中"),
+        "background": sum(1 for t in all_tasks if t.get("status") == "后台中"),
         "needs_approval": sum(1 for t in all_tasks if t.get("status") == "需审批"),
         "completed": sum(1 for t in all_tasks if t.get("status") == "已完成"),
         "cancelled": sum(1 for t in all_tasks if t.get("status") == "已取消"),

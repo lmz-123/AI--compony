@@ -408,14 +408,18 @@ def _decision(text, *, sender=""):
                      sender=sender, text=text, msg_id="om_x", create_time="0")
 
 
-def test_compose_inject_text_user_message_says_use_claudeteam_say():
-    """Boss / unknown sender → wrapper points at `claudeteam say` (chat
-    callback channel). The original text body is preserved verbatim
-    after the hint."""
+def test_compose_inject_text_user_message_worker_defaults_to_manager():
+    """Boss / unknown sender to a non-manager worker → wrapper should
+    first route the formal result back to manager, not directly to user."""
     out = _compose_inject_text("worker_cc", _decision("hello there"))
-    assert "claudeteam say worker_cc" in out
+    assert "claudeteam send manager worker_cc" in out
     assert "hello there" in out
-    assert "[群聊·老板]" in out
+    assert "[老板]" in out
+
+
+def test_compose_inject_text_user_message_manager_still_says_to_user():
+    out = _compose_inject_text("manager", _decision("hello there"))
+    assert "claudeteam say manager" in out
 
 
 def test_compose_inject_text_peer_message_uses_send_back_to_sender():
@@ -425,7 +429,7 @@ def test_compose_inject_text_peer_message_uses_send_back_to_sender():
         "worker_cc", _decision("question for you", sender="manager"))
     assert "claudeteam send manager worker_cc" in out
     assert "question for you" in out
-    assert "[同事·manager]" in out
+    assert "[manager]" in out
 
 
 def test_compose_inject_text_includes_local_id_for_mark_read():

@@ -186,7 +186,7 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam \
   --dry-run
 ```
 
-真实构建、校验并发送当前飞书群：
+真实构建、校验并返回下载链接：
 
 ```bash
 docker compose -f deploy/server/compose.yaml exec -T claudeteam \
@@ -194,11 +194,36 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam \
   --target tripcanvas-android \
   --ref main \
   --build-type debug \
-  --format apk \
-  --send-to-feishu
+  --format apk
 ```
 
+默认交付给老板的是 `download_url + 文件名 + SHA256 + workflow URL`，而不是飞书文件本体。只有在老板明确要求发飞书文件、且机器人 `im:resource` 权限已验证可用时，才额外追加 `--send-to-feishu`。
+
 产物和 manifest 保存在宿主机 `/srv/ai-company-artifacts/<request_id>/`（容器内路径仍是 `/data/artifacts/<request_id>/`）。GitHub Artifact 保留 7 天；确认交付后可按 request 目录清理服务器副本，不要删除整个 `/srv/ai-company-artifacts`。
+
+如果部署或构建脚本预计会运行很久，推荐使用后台包装器而不是让 deployer 一直前台等待：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  python /app/scripts/deploy/run_async_and_notify.py \
+  --agent deployer \
+  --notify manager \
+  --task-id T-XX \
+  --label "TripCanvas debug APK 构建" \
+  -- \
+  python /app/skills/build-tripcanvas-android/scripts/build_android.py \
+  --target tripcanvas-android \
+  --ref main \
+  --build-type debug \
+  --format apk
+```
+
+这条命令会：
+
+- 立即返回 job id 与日志路径
+- 后台继续跑真实脚本
+- 跑完后自动把结果回推给 `manager`
+- 不需要 deployer 持续盯着 subprocess
 
 正式 release 还需要在 `lmz-123/MyAPPs` 的 GitHub Actions secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_STORE_PASSWORD`，完成一次独立签名验证后再把 `allow_release` 改为 `true`。
 

@@ -5,6 +5,18 @@ description: Diagnose TripCanvas production and test incidents using bounded evi
 
 # TripCanvas Intelligent Operations Debugging
 
+## Quick Path
+
+Most incidents only need this short path:
+
+1. Read `/data/ops-targets.toml`
+2. Identify one affected service, one narrow time window, one error/correlation key
+3. Read only that service's recent logs
+4. Stop if logs already explain the issue
+5. Only then branch to health / PostgreSQL / Redis / SLS
+
+Do not start with a full runtime sweep unless the first bounded log read is inconclusive.
+
 Use the smallest read-only query sequence that can explain the reported symptom. Stop when the question is answered or the next action belongs to another role.
 
 ## Safety Contract

@@ -753,6 +753,7 @@ def _handle_clear(args: str, ctx: SlashContext) -> str:
 _TASK_COLUMNS = (
     ("待处理", "📋"),
     ("进行中", "🔄"),
+    ("后台中", "🕓"),
     ("需审批", "⏳"),
     ("已完成", "✅"),
     ("已取消", "🚫"),

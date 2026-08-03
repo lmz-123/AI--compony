@@ -29,6 +29,13 @@ def test_create_with_metadata_persists_creator_and_description():
         assert t["description"] == "root cause is Y"
 
 
+def test_create_with_auto_dispatch_persists():
+    with isolated_env():
+        tid = tasks.create("worker", "fix X", auto_dispatch_assignee="deployer")
+        t = tasks.get(tid)
+        assert t["auto_dispatch_assignee"] == "deployer"
+
+
 def test_create_empty_title_rejects():
     with isolated_env():
         try:
@@ -124,6 +131,35 @@ def test_update_only_changes_specified_fields():
         assert t["title"] == "title-1"
         assert t["description"] == "d-1"
         assert t["creator"] == "c-1"
+
+
+def test_update_can_change_auto_dispatch_assignee():
+    with isolated_env():
+        tid = tasks.create("w1", "title-1")
+        tasks.update(tid, auto_dispatch_assignee="deployer")
+        assert tasks.get(tid)["auto_dispatch_assignee"] == "deployer"
+
+
+def test_background_state_releases_worker_for_next_claim():
+    with isolated_env():
+        first = tasks.create("deployer", "slow apk")
+        second = tasks.create("deployer", "next deploy")
+        assert tasks.claim_next("deployer")[0] == "claimed"
+        assert tasks.get(first)["status"] == "进行中"
+        assert tasks.background(first, note="apk job", by="deployer") is True
+        assert tasks.get(first)["status"] == tasks.BACKGROUND_STATUS
+        state, task = tasks.claim_next("deployer")
+        assert state == "claimed"
+        assert task["id"] == second
+
+
+def test_background_requires_in_progress_task():
+    with isolated_env():
+        tid = tasks.create("deployer", "slow apk")
+        assert tasks.background(tid, note="apk job", by="deployer") is False
+        tasks.update(tid, status="进行中")
+        assert tasks.background(tid, note="apk job", by="deployer") is True
+        assert tasks.background(tid, note="again", by="deployer") is False
 
 
 def test_update_can_reassign_and_retitle():

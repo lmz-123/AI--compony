@@ -138,24 +138,22 @@ def _compose_inject_text(agent: str, decision: Decision,
          so manager's inbox pings — manager's pane is blind to
          chat-only `say` events otherwise."""
     sender = decision.sender or "user"
-    read_hint = (f" 完成后用 `claudeteam read {local_id}` 销 inbox。"
+    read_hint = (f" 完成后 `claudeteam read {local_id}`。"
                  if local_id else "")
     summary_hint = ""
     if (agent != "manager"
             and _wants_manager_summary(decision.text)):
-        summary_hint = (f" 这条似乎需要 manager 汇总，处理完后**额外**"
-                        f"发一句 `claudeteam send manager {agent} \"<结果>\"` "
-                        f"让 manager inbox 知道你的进度。")
-    # 简短引导 — 长解释属于 identity.md 的职责，不是每次注入都重复一遍。
-    # 关键指示：哪个频道回 + 怎么 mark read（如果 local_id 已知）+ 是否需
-    # 要 send manager 让其汇总。具体命令格式 / --to 选择交给 identity 教。
+        summary_hint = f" 另补一句 `claudeteam send manager {agent} \"<结果>\"`。"
     if sender == "user" or not sender:
-        hint = (f"[群聊·老板] 用 `claudeteam say {agent} \"...\" --to user` "
-                f"回群。{summary_hint}{read_hint}")
+        if agent == "manager":
+            hint = (f"[老板] 回群：`claudeteam say {agent} \"...\" --to user`。"
+                    f"{summary_hint}{read_hint}")
+        else:
+            hint = (f"[老板] 先回主管：`claudeteam send manager {agent} \"...\"`。"
+                    f"仅在主管要求时再回群。{summary_hint}{read_hint}")
     else:
-        hint = (f"[同事·{sender}] 回 `claudeteam send {sender} {agent} "
-                f"\"...\"`；要公告到群用 `claudeteam say {agent} "
-                f"\"...\" --to user`。{read_hint}")
+        hint = (f"[{sender}] 回：`claudeteam send {sender} {agent} \"...\"`。"
+                f"要老板可见再回群。{read_hint}")
     return f"{hint}\n\n{decision.text}"
 
 

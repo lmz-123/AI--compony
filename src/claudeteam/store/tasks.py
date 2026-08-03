@@ -4,7 +4,7 @@ One JSON file (`$CLAUDETEAM_STATE_DIR/tasks.json`) with shape:
     {"tasks": [...], "intents": [...], "_meta": {"last_id": N, "last_intent_id": M}}
 
 Each task:
-    {id, title, description, assignee, creator, intent_id,
+    {id, title, description, assignee, creator, intent_id, auto_dispatch_assignee,
      status, awaiting, approval_note, paused_by, paused_at,
      created_at, updated_at, completed_at}
 
@@ -14,7 +14,7 @@ Each intent (immutable verbatim record of the boss's original words):
 Pure file-locked CRUD; lifecycle orchestration (who gets what, when) is left
 to the agents — the store only owns state + the approval-suspend invariants.
 
-Status vocabulary: 待处理 / 进行中 / 需审批 / 已完成 / 已取消
+Status vocabulary: 待处理 / 进行中 / 后台中 / 需审批 / 已完成 / 已取消
 The `需审批` (needs-approval) state is a hard suspend: a task there can only
 leave via approve()/reject(), never via the generic update() path.
 """
@@ -26,7 +26,8 @@ from claudeteam.runtime import paths
 from claudeteam.util import flock, now_ms, read_json, write_json
 
 
-VALID_STATUSES = {"待处理", "进行中", "需审批", "已完成", "已取消"}
+BACKGROUND_STATUS = "后台中"
+VALID_STATUSES = {"待处理", "进行中", BACKGROUND_STATUS, "需审批", "已完成", "已取消"}
 DEFAULT_STATUS = "待处理"
 SUSPEND_STATUS = "需审批"
 TERMINAL_STATUSES = {"已完成", "已取消"}
@@ -41,7 +42,8 @@ TERMINAL_STATUSES = {"已完成", "已取消"}
 # pause()/approve()/reject() before this map is consulted.
 LEGAL_TRANSITIONS: dict[str, set[str]] = {
     "待处理": {"进行中", "已完成", "已取消"},
-    "进行中": {"待处理", "已完成", "已取消"},
+    "进行中": {"待处理", BACKGROUND_STATUS, "已完成", "已取消"},
+    BACKGROUND_STATUS: {"待处理", "进行中", "已完成", "已取消"},
     "已完成": set(),
     "已取消": set(),
 }
@@ -83,7 +85,8 @@ def _set_status(task: dict, status: str) -> None:
 
 
 def create(assignee: str, title: str, *,
-           description: str = "", creator: str = "", intent_id: str = "") -> str:
+           description: str = "", creator: str = "", intent_id: str = "",
+           auto_dispatch_assignee: str = "") -> str:
     """Create a new task; return its task_id (T-<n>).
 
     `intent_id` (optional) back-links the task to an immutable intent record
@@ -104,11 +107,15 @@ def create(assignee: str, title: str, *,
             "assignee": assignee,
             "creator": creator,
             "intent_id": intent_id,
+            "auto_dispatch_assignee": auto_dispatch_assignee,
             "status": DEFAULT_STATUS,
             "awaiting": "",
             "approval_note": "",
             "paused_by": "",
             "paused_at": None,
+            "background_note": "",
+            "background_by": "",
+            "background_started_at": None,
             "created_at": now,
             "updated_at": now,
             "completed_at": None,
@@ -119,7 +126,8 @@ def create(assignee: str, title: str, *,
 
 def update(task_id: str, *, status: str | None = None,
            assignee: str | None = None, title: str | None = None,
-           description: str | None = None) -> bool:
+           description: str | None = None,
+           auto_dispatch_assignee: str | None = None) -> bool:
     """Apply non-None fields. Returns False if task_id not found.
 
     The generic path refuses to move a task INTO or OUT OF `需审批`: the
@@ -157,6 +165,8 @@ def update(task_id: str, *, status: str | None = None,
             task["title"] = title.strip()
         if description is not None:
             task["description"] = description
+        if auto_dispatch_assignee is not None:
+            task["auto_dispatch_assignee"] = auto_dispatch_assignee
         task["updated_at"] = now_ms()
         _save(data)
         return True
@@ -187,6 +197,27 @@ def active_for(assignee: str) -> list[dict]:
         t for t in list_tasks(assignee=assignee)
         if t.get("status") in {"进行中", SUSPEND_STATUS}
     ]
+
+
+def background(task_id: str, *, note: str = "", by: str = "") -> bool:
+    """进行中 → 后台中.
+
+    Used when a worker has successfully handed a long-running deploy/build
+    script off to a detached backend job and should be free to accept the next
+    queue item immediately. 后台中 is intentionally NOT treated as busy by
+    claim_next/active_for.
+    """
+    with _locked():
+        data = _load()
+        task = _find(data, task_id)
+        if task is None or task.get("status") != "进行中":
+            return False
+        _set_status(task, BACKGROUND_STATUS)
+        task["background_note"] = note
+        task["background_by"] = by
+        task["background_started_at"] = now_ms()
+        _save(data)
+        return True
 
 
 def release_in_progress_for_ready(assignee: str) -> list[str]:

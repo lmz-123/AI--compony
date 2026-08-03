@@ -1,9 +1,24 @@
 ---
 name: build-tripcanvas-android
-description: Build, validate, download, and deliver TripCanvas Android APK or AAB artifacts through an allowlisted GitHub Actions workflow and the current Feishu group. Use when users ask to package, build, generate, download, or send an Android app, APK, AAB, debug build, test build, or signed release for TripCanvas, including investigating failed mobile builds.
+description: Build, validate, download, and deliver TripCanvas Android APK or AAB artifacts through an allowlisted GitHub Actions workflow, returning a server download link by default. Use when users ask to package, build, generate, download, or send an Android app, APK, AAB, debug build, test build, or signed release for TripCanvas, including investigating failed mobile builds.
 ---
 
 # Build TripCanvas Android
+
+## Quick Path
+
+For ordinary debug APK work, the short path is:
+
+1. Use configured defaults from `/data/build-targets.toml`
+2. Run the build script without `--send-to-feishu`
+3. Return only `download_url`, filename, SHA256, and workflow URL to `manager`
+
+Only read the rest of this file when:
+
+- configuration is being changed;
+- a release build is requested;
+- delivery failed;
+- the workflow failed and needs diagnosis.
 
 Use the bundled runner instead of manually composing GitHub API calls. It keeps the GitHub token out of commands and limits builds to targets and refs declared in `/data/build-targets.toml`.
 
@@ -14,7 +29,7 @@ Use the bundled runner instead of manually composing GitHub API calls. It keeps 
 - Build only committed and pushed code. Record the requested ref and resulting immutable commit.
 - Never print `GITHUB_TOKEN`, keystore data, aliases, or signing passwords. The runner reads the token internally from `/data/state/.env`.
 - Every Android build requires `AMAP_ANDROID_KEY` in the MyAPPs GitHub Actions secrets. Never request or place that value in chat, server TOML, or the repository.
-- Do not publish to an app store. This workflow only produces and sends an artifact.
+- Do not publish to an app store. This workflow only produces an artifact plus its delivery metadata.
 - Embed an API URL reachable by the target phone. Do not use `localhost` or `127.0.0.1` for a physical-device APK.
 
 ## Build Workflow
@@ -33,7 +48,7 @@ python /app/skills/build-tripcanvas-android/scripts/build_android.py \
   --dry-run
 ```
 
-4. For a routine build, directly trigger, wait, download, verify, and deliver the APK:
+4. For a routine build, directly trigger, wait, download, verify, and return the APK metadata:
 
 ```bash
 python /app/skills/build-tripcanvas-android/scripts/build_android.py \
@@ -41,11 +56,18 @@ python /app/skills/build-tripcanvas-android/scripts/build_android.py \
   --ref main \
   --build-type debug \
   --format apk \
-  --api-base-url https://api.example.com \
-  --send-to-feishu
+  --api-base-url https://api.example.com
 ```
 
 Use the real URL from `/data/build-targets.toml` or the manager's task. Never copy the example URL.
+
+5. Default delivery path: give `manager` the returned `download_url`, filename, SHA256, and workflow URL. Do **not** add `--send-to-feishu` for ordinary debug APK work.
+
+6. Only when the user explicitly asks to send the file to Feishu, and robot file-upload permissions are already confirmed working, append:
+
+```bash
+--send-to-feishu
+```
 
 ## Deterministic Verification
 
@@ -71,7 +93,7 @@ the runner will emit both:
 - local `file` path for retained server artifact storage
 - public `download_url` for manager/user delivery
 
-The server must expose `artifact_dir` read-only at that URL path.
+The server must expose `artifact_dir` read-only at that URL path. For ordinary debug APKs, this `download_url` is the primary handoff artifact.
 
 ## Failure Handoff
 
