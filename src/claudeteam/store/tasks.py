@@ -189,6 +189,32 @@ def active_for(assignee: str) -> list[dict]:
     ]
 
 
+def release_in_progress_for_ready(assignee: str) -> list[str]:
+    """Re-queue stale `进行中` work when an agent explicitly reports `ready`.
+
+    This is a backend escape hatch for long-lived panes/restarts: if a worker
+    says "I am ready / idle" but an old in-progress task was never terminalised,
+    that stale active task should stop blocking queueing and status review. We
+    move only `进行中` tasks back to `待处理`; `需审批` remains gated and still
+    requires an explicit manager verdict.
+    """
+    released: list[str] = []
+    with _locked():
+        data = _load()
+        changed = False
+        for task in data.get("tasks", []):
+            if task.get("assignee") != assignee:
+                continue
+            if task.get("status") != "进行中":
+                continue
+            _set_status(task, DEFAULT_STATUS)
+            released.append(task.get("id", ""))
+            changed = True
+        if changed:
+            _save(data)
+    return [tid for tid in released if tid]
+
+
 def claim_next(assignee: str, *, allow_busy: bool = False) -> tuple[str, dict | None]:
     """Move the oldest pending task for assignee to 进行中.
 

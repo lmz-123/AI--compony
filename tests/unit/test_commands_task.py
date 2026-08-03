@@ -87,6 +87,21 @@ def test_task_done_marks_completed():
         assert t["completed_at"] is not None
 
 
+def test_task_done_notifies_manager_and_suggests_next_dispatch():
+    with isolated_env():
+        run_cli(["task", "create", "w", "first", "--by", "manager"])
+        run_cli(["task", "create", "w", "second", "--by", "manager"])
+        run_cli(["task", "update", "T-1", "--status", "进行中"])
+        rc, _, _ = run_cli(["task", "done", "T-1"])
+        assert rc == 0
+        msgs = [m for m in local_facts.list_messages("manager") if m["task_id"] == "T-1"]
+        assert msgs, "manager should receive a backend completion receipt"
+        content = msgs[-1]["content"]
+        assert "任务完成回执" in content
+        assert "T-2 second" in content
+        assert "dispatch-next w --by manager" in content
+
+
 # ── list / get ────────────────────────────────────────────────────
 
 
@@ -299,6 +314,23 @@ def test_task_reject_rework_echoes_to_assignee_and_logs():
         assert ("task_transition", "T-1") in kinds
 
 
+def test_task_approve_done_notifies_manager():
+    with isolated_env():
+        _make_in_progress()
+        run_cli(["task", "update", "T-1", "--title", "ship it"])
+        run_cli(["task", "update", "T-1", "--assignee", "w"])
+        run_cli(["task", "update", "T-1", "--desc", "d"])
+        tasks.update("T-1", assignee="w")  # keep deterministic local object for tests
+        tasks.update("T-1", title="ship it")
+        run_cli(["task", "pause", "T-1", "--by", "w"])
+        rc, _, _ = run_cli(["task", "approve", "T-1", "--done", "--note", "OK"])
+        assert rc == 0
+        msgs = [m for m in local_facts.list_messages("manager") if m["task_id"] == "T-1"]
+        assert msgs
+        assert "任务完成回执" in msgs[-1]["content"]
+        assert "已批准完成" in msgs[-1]["content"]
+
+
 def test_task_pause_routes_to_explicit_approver_via_to():
     """`--to manager` sends the approval request to that inbox (not boss),
     and records awaiting=manager on the task."""
@@ -373,6 +405,18 @@ def test_reidentify_stale_anchor_skips_reloading_cli():
                         has_window=lambda t: True), \
              attr_patch(wake_mod, is_ready=lambda t, a: True):
             task_cmd._reidentify_stale_anchor("worker_cc")
+        assert sink == []
+
+
+def test_reidentify_stale_anchor_skips_manager_to_preserve_live_context():
+    """Manager is a long-lived coordinator: task churn should not keep
+    re-injecting the heavy init prompt into its live session."""
+    with isolated_env(team={"agents": {"manager": {"cli": "codex-cli"}}}):
+        sink, fake_inject = _capture_injects()
+        with attr_patch(tmux_mod, inject=fake_inject,
+                        has_session=lambda s: True,
+                        has_window=lambda t: True):
+            task_cmd._reidentify_stale_anchor("manager")
         assert sink == []
 
 

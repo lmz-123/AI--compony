@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from helpers import isolated_env, run_cli
-from claudeteam.store import local_facts
+from claudeteam.store import local_facts, tasks
 
 
 # ── status ─────────────────────────────────────────────────────────
@@ -51,6 +51,16 @@ def test_status_set_idempotent_overwrites_previous():
         snap = local_facts.get_status("a")
         assert snap["status"] == "已完成"
         assert snap["task"] == "second"
+
+
+def test_status_ready_releases_stale_in_progress_tasks():
+    with isolated_env():
+        tasks.create("a", "old active")
+        tasks.update("T-1", status="进行中")
+        rc, out, _ = run_cli(["status", "a", "进行中", "ready"])
+        assert rc == 0
+        assert "released stale in-progress task(s): T-1" in out
+        assert tasks.get("T-1")["status"] == "待处理"
 
 
 def test_status_zero_args_returns_one_with_usage():

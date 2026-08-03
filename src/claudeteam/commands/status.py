@@ -6,6 +6,7 @@ with no further args.
 """
 from __future__ import annotations
 
+from claudeteam.store import tasks
 from claudeteam.store import local_facts
 from claudeteam.util import maybe_print_help, reject_flag_as_agent, usage_error
 
@@ -46,6 +47,11 @@ def main(argv: list[str]) -> int:
     state = argv[1]
     task = argv[2]
     blocker = argv[3] if len(argv) > 3 else ""
+    released: list[str] = []
+    if state == "进行中" and task.strip().lower() == "ready":
+        released = tasks.release_in_progress_for_ready(agent)
     local_facts.upsert_status(agent, state, task, blocker=blocker)
     print(f"✅ {agent} → {state}: {task}" + (f" ⛔ {blocker}" if blocker else ""))
+    if released:
+        print(f"  ↺ released stale in-progress task(s): {', '.join(released)}")
     return 0

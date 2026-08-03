@@ -78,6 +78,8 @@ def _reidentify_stale_anchor(agent: str) -> None:
     self-injection, no special case needed. Duplicate wakes (a task change
     that also delivered a message) are tolerated on purpose: re-waking is
     safer than a missed anchor, and dedup would need cross-process state."""
+    if agent == "manager":
+        return
     try:
         from claudeteam.agents import adapter_for_agent, identity
         from claudeteam.runtime import config, tmux, wake
@@ -163,6 +165,52 @@ def _seal_if_terminal(t: dict | None) -> None:
         pass
 
 
+def _followup_hint(assignee: str) -> str:
+    """Small queue hint threaded into manager receipts so the next dispatch
+    step doesn't depend on a worker remembering to remind the manager."""
+    if not assignee:
+        return ""
+    try:
+        pending = tasks.list_tasks(status="待处理", assignee=assignee)
+    except Exception:
+        return ""
+    if not pending:
+        return ""
+    next_task = pending[0]
+    extra = ""
+    if len(pending) > 1:
+        extra = f"，另有 {len(pending) - 1} 个待处理"
+    return (
+        f" 当前 {assignee} 下一待处理任务：{next_task.get('id', '')} "
+        f"{next_task.get('title', '')}{extra}。如验收通过，可继续 "
+        f"`claudeteam task dispatch-next {assignee} --by manager`。"
+    )
+
+
+def _notify_manager_followup(t: dict | None, message: str, *, sender: str = "") -> None:
+    """Deterministic backend receipt to manager/creator on task transitions.
+
+    The prompt can ask workers to report, but queue progression should not rely
+    on that alone: when a worker finishes or a task changes phase, manager
+    needs a guaranteed inbox nudge so it can validate and dispatch the next
+    step. Best-effort only — task state already changed and that must win.
+    """
+    if not t:
+        return
+    recipient = (t.get("creator") or "").strip() or "manager"
+    assignee = (t.get("assignee") or "").strip()
+    if recipient == assignee:
+        recipient = "manager"
+    if not recipient or recipient == assignee:
+        return
+    full = message + _followup_hint(assignee)
+    try:
+        from claudeteam.commands import send as send_cmd
+        send_cmd.main([recipient, sender or assignee or "system", full, "高", "--task", t.get("id", "")])
+    except Exception:
+        pass
+
+
 def _cmd_create(rest: list[str]) -> int:
     by = pop_flag(rest, "--by") or ""
     desc = pop_flag(rest, "--desc") or ""
@@ -210,6 +258,11 @@ def _cmd_update(rest: list[str]) -> int:
             and (not before or before.get("status") != "已完成")):
         _auto_memory(after.get("assignee", ""), "task_completed",
                      f"{_mem_title(after)} 已完成", ref=tid)
+        _notify_manager_followup(
+            after,
+            f"【任务完成回执】{tid} 已完成：{after.get('title', '')}（assignee={after.get('assignee', '')}）。",
+            sender=after.get("assignee", ""),
+        )
     _seal_if_terminal(after)
     print(f"✅ updated {tid}")
     return 0
@@ -325,6 +378,17 @@ def _cmd_approve(rest: list[str]) -> int:
     if done and t.get("status") == "已完成":
         _auto_memory(t.get("assignee", ""), "task_completed",
                      f"{_mem_title(t)} 已批准完成", ref=tid)
+        _notify_manager_followup(
+            t,
+            f"【任务完成回执】{tid} 已批准完成：{t.get('title', '')}（assignee={t.get('assignee', '')}）{suffix}。",
+            sender=t.get("assignee", ""),
+        )
+    else:
+        _notify_manager_followup(
+            t,
+            f"【任务恢复回执】{tid} 已批准继续：{t.get('title', '')}（assignee={t.get('assignee', '')}）{suffix}。",
+            sender=t.get("assignee", ""),
+        )
     _seal_if_terminal(t)
     print(f"✅ approved {tid} → {t['status']}")
     return 0
@@ -345,6 +409,12 @@ def _cmd_reject(rest: list[str]) -> int:
     local_facts.append_message(t["assignee"], "user",
                                f"{tid} {verb}: {feedback}", task_id=tid)
     _refresh_anchor(t["assignee"])
+    _notify_manager_followup(
+        t,
+        f"【任务裁决回执】{tid} {verb}：{t.get('title', '')}（assignee={t.get('assignee', '')}）"
+        + (f"；反馈：{feedback}" if feedback else "。"),
+        sender=t.get("assignee", ""),
+    )
     _seal_if_terminal(t)
     print(f"↩️  rejected {tid} → {t['status']}")
     return 0
@@ -365,6 +435,11 @@ def _cmd_void(rest: list[str]) -> int:
     local_facts.append_log(t["assignee"], "task_transition",
                            f"{tid} {prev}→已取消 (void){suffix}", ref=tid)
     _refresh_anchor(t["assignee"])
+    _notify_manager_followup(
+        t,
+        f"【任务作废回执】{tid} 已作废：{t.get('title', '')}（assignee={t.get('assignee', '')}）{suffix}。",
+        sender=by or t.get("assignee", ""),
+    )
     _seal_if_terminal(t)
     print(f"🗑️  voided {tid} → 已取消")
     return 0

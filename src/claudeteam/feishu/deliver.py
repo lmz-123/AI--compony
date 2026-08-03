@@ -182,7 +182,15 @@ def _inject_to_pane(agent: str, decision: Decision,
             if not wake_fn(target, adapter, **_build_wake_args(agent, adapter)):
                 print(f"  ⚠️ {agent} pane not ready; injecting anyway")
         text = _compose_inject_text(agent, decision, local_id=local_id)
-        ok = deps.tmux_inject(target, text, submit_keys=adapter.submit_keys())
+        # For real pane delivery, verify the submit actually landed instead of
+        # fire-and-forget. Manager's biggest failure mode was "message reached
+        # the composer but was never really submitted", which left inbox unread
+        # until a later nudge. Tests that inject a fake tmux helper still use
+        # the old direct path.
+        if deps.tmux_inject is tmux.inject:
+            ok = wake.inject_and_confirm(target, adapter, text)
+        else:
+            ok = deps.tmux_inject(target, text, submit_keys=adapter.submit_keys())
     except Exception as e:
         print(f"  ⚠️ inject error for {agent}: {e}")
         return "failed_inject"

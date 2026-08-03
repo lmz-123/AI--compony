@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 
-from helpers import isolated_env
+from helpers import isolated_env, attr_patch
 from claudeteam.feishu.deliver import (
     apply, _compose_inject_text, _wants_manager_summary,
 )
@@ -79,6 +79,33 @@ def test_route_writes_inbox_and_injects_for_each_target():
     assert {c[0] for c in inject_calls} == {"S:worker_a", "S:worker_b"}
     # default submit_keys come from the adapter
     assert inject_calls[0][2] == ["Enter"]
+
+
+def test_route_default_delivery_uses_confirmed_submit():
+    """Production pane delivery should go through wake.inject_and_confirm so
+    the message is actually submitted, not merely pasted into the composer."""
+    decision = Decision(
+        action=Action.ROUTE,
+        targets=["worker_a"],
+        sender="manager",
+        text="please do X",
+        msg_id="om_1",
+    )
+    confirm_calls = []
+    with isolated_env():
+        from claudeteam.feishu import deliver as deliver_mod
+        from helpers import attr_patch
+        with attr_patch(deliver_mod.tmux, has_session=lambda *_: True, has_window=lambda *_: True), \
+             attr_patch(deliver_mod.wake,
+                        is_ready=lambda *_a, **_kw: True,
+                        inject_and_confirm=lambda target, adapter, text: confirm_calls.append((str(target), text)) or True):
+            report = apply(
+                decision,
+                adapter_for_agent=_adapter_factory,
+                session="S",
+            )
+    assert report.injected == ["worker_a"]
+    assert confirm_calls and confirm_calls[0][0] == "S:worker_a"
 
 
 def test_route_uses_user_as_sender_when_decision_sender_blank():

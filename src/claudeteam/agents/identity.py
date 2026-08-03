@@ -419,6 +419,7 @@ def init_prompt(agent: str) -> str:
     base = (
         f"You are {agent}. Read {id_path}, then run:\n"
         f"  claudeteam inbox {agent}\n"
+        f"  # only when there is no active T-n and no actionable unread work:\n"
         f"  claudeteam status {agent} 进行中 \"ready\"\n"
         f"\n"
         f"Process inbox with task isolation:\n"
@@ -434,6 +435,8 @@ def init_prompt(agent: str) -> str:
         f"     Skipping --to silently falls back to user but defeats\n"
         f"     chat.publish filtering — don't be lazy.\n"
         f"  4. Mark a message read only after you have handled it: `claudeteam read <local_id>`.\n"
+        f"  5. Do NOT set status to `ready` if there is still an active T-n, a blocker waiting for follow-up,\n"
+        f"     or an actionable inbox item you are about to process.\n"
         f"\n"
         f"After processing, ack with one line: name, state, processed count."
     )
