@@ -18,6 +18,15 @@ chmod 700 server-secrets/ssh server-secrets/codex
 chmod 600 server-secrets/codex/config.toml server-secrets/ssh/config
 ```
 
+另外在服务器宿主机创建独立的 APK/产物目录，供容器写入、Nginx 直接只读暴露：
+
+```bash
+mkdir -p /srv/ai-company-artifacts
+chmod 755 /srv/ai-company-artifacts
+```
+
+`deploy/server/compose.yaml` 会把它单独挂载到容器内的 `/data/artifacts`。这样 Android 构建产物不会再落在 `/root/...` 目录链路下，Nginx 可直接读取 `/srv/ai-company-artifacts`，避免 403 权限问题。
+
 编辑 `team-data/claudeteam.toml`，填入已经绑定的飞书群 `chat_id`。把桌面机生成的 `state/feishu_app.json` 安全传到 `team-data/state/feishu_app.json`，权限设为 `0600`。
 
 默认配置关闭启动全员点名：
@@ -159,7 +168,7 @@ default_api_base_url = "https://你的TripCanvas接口域名"
 artifact_public_base_url = "https://你的服务器域名或IP:端口/artifacts"
 ```
 
-这样 Android 构建脚本会在结果里同时给出本地保存路径 `file` 和公网下载地址 `download_url`。
+这样 Android 构建脚本会在结果里同时给出本地保存路径 `file` 和公网下载地址 `download_url`。在当前服务器部署中，容器内 `/data/artifacts` 会直接落到宿主机 `/srv/ai-company-artifacts`。
 
 在 `lmz-123/MyAPPs` 的 GitHub 仓库 Settings -> Secrets and variables -> Actions 中新增 `AMAP_ANDROID_KEY`。debug 和 release 都需要这个高德 Android Key；不要把它写进服务器 `.env`、`build-targets.toml`、代码仓库或飞书消息。
 
@@ -189,7 +198,7 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam \
   --send-to-feishu
 ```
 
-产物和 manifest 保存在 `team-data/artifacts/<request_id>/`。GitHub Artifact 保留 7 天；确认交付后可按 request 目录清理服务器副本，不要删除整个 `team-data`。
+产物和 manifest 保存在宿主机 `/srv/ai-company-artifacts/<request_id>/`（容器内路径仍是 `/data/artifacts/<request_id>/`）。GitHub Artifact 保留 7 天；确认交付后可按 request 目录清理服务器副本，不要删除整个 `/srv/ai-company-artifacts`。
 
 正式 release 还需要在 `lmz-123/MyAPPs` 的 GitHub Actions secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_STORE_PASSWORD`，完成一次独立签名验证后再把 `allow_release` 改为 `true`。
 

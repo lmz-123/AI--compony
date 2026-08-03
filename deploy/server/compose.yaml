@@ -9,6 +9,7 @@ services:
     volumes:
       - ../../src:/app/src:ro
       - ../../team-data:/data
+      - /srv/ai-company-artifacts:/data/artifacts
       - ../../projects:/workspace/projects
       - ../../server-secrets/codex/config.toml:/root/.codex/config.toml:ro
       - ../../server-secrets/ssh:/root/.ssh:ro
