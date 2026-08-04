@@ -43,6 +43,7 @@ ufw allow 22/tcp
 ufw allow 8000/tcp
 ufw allow 8081/tcp
 ufw allow 8765/tcp
+ufw allow 8766/tcp
 ufw status
 ```
 
@@ -52,6 +53,7 @@ ufw status
 - `8000`：业务服务健康检查/接口
 - `8081`：APK/产物下载
 - `8765`：只读监控页面
+- `8766`：后台管理台
 
 如果使用阿里云安全组，也要同步放行这些端口。
 
