@@ -184,7 +184,6 @@ def _daemon_checks() -> list[Check]:
 def _port_checks() -> list[Check]:
     ports = {
         "port.monitor": int(os.environ.get("CLAUDETEAM_MONITOR_PORT", "8765")),
-        "port.admin": int(os.environ.get("CLAUDETEAM_ADMIN_PORT", "8766")),
         "port.artifacts": int(os.environ.get("CLAUDETEAM_ARTIFACT_PORT", "8081")),
     }
     rows = []

@@ -14,7 +14,7 @@ from claudeteam.commands import (
     init, send, inbox, read, status, log, team, workspace,
     start, hire, fire, restart, up, down, reset, reidentify, switch,
     say, router, watchdog, task, teamctl, remember, recall, forget, peek,
-    health, usage, install_hooks, version, feishu, monitor, admin, doctor,
+    health, usage, install_hooks, version, feishu, monitor, doctor,
     radio, learn,
 )
 from claudeteam.util import error_exit
@@ -79,7 +79,6 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, CommandHandler]]]] = [
     ("operational", [
         ("health", health.main),
         ("monitor", monitor.main),
-        ("admin", admin.main),
         ("doctor", doctor.main),
         ("usage", usage.main),
         ("install-hooks", install_hooks.main),

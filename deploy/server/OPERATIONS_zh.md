@@ -43,7 +43,6 @@ ufw allow 22/tcp
 ufw allow 8000/tcp
 ufw allow 8081/tcp
 ufw allow 8765/tcp
-ufw allow 8766/tcp
 ufw status
 ```
 
@@ -53,7 +52,6 @@ ufw status
 - `8000`：业务服务健康检查/接口
 - `8081`：APK/产物下载
 - `8765`：只读监控页面
-- `8766`：后台管理台
 
 如果使用阿里云安全组，也要同步放行这些端口。
 
@@ -400,7 +398,7 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam cat /data/state/
 - 检查 `chat_id`、team roster、密钥是否可见
 - 检查 `/workspace/projects`、TripCanvas 后端 `.venv` 预热状态
 - 检查 `/root/.ssh`、部署私钥、`known_hosts`
-- 检查 `/data/artifacts`、router/watchdog、8765/8766/8081 端口
+- 检查 `/data/artifacts`、router/watchdog、8765/8081 端口
 - 给出明确 action，避免 agent 为环境问题反复重试
 
 如果只是想准备后端开发环境，可以运行：

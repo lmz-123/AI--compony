@@ -304,33 +304,13 @@ ssh -L 8765:127.0.0.1:8765 root@你的服务器IP
 
 ## 后台管理台
 
-服务器容器也会启动一个独立管理台：
+可写管理台不再内置在 AI Company team 容器里，避免控制面和 agent 执行面耦合。请单独部署：
 
 ```text
-http://127.0.0.1:8766/
+https://github.com/lmz-123/AI-Compony-admin
 ```
 
-它和只读监控页分开运行，支持：
-
-- 查看每个 agent 的实时 pane 输出、任务、inbox 和日志
-- 新增 agent，并在团队 session 已运行时自动 `hire`
-- 编辑 agent 的 CLI、模型、推理等级、角色、playbook、specialty、notes
-- 删除 agent，底层走现有 `fire` 流程并保留归档
-- 重启 agent，底层走现有 `restart` 流程
-
-JSON 接口：
-
-```bash
-curl -fsS http://127.0.0.1:8766/api/admin/state
-```
-
-管理台是可写控制面，不建议裸奔公网。公网访问前至少使用 Nginx Basic Auth / IP 白名单 / HTTPS，或优先用 SSH 隧道：
-
-```bash
-ssh -L 8766:127.0.0.1:8766 root@你的服务器IP
-```
-
-然后本机浏览器访问 `http://127.0.0.1:8766/`。
+AI Company 主项目只保留只读 `monitor` 和 agent/runtime 命令。
 
 ## 环境体检 Doctor
 

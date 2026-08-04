@@ -39,13 +39,6 @@ if [ "${CLAUDETEAM_MONITOR_ENABLED:-1}" != "0" ]; then
     >> /data/state/monitor.log 2>&1 &
 fi
 
-if [ "${CLAUDETEAM_ADMIN_ENABLED:-1}" != "0" ]; then
-  claudeteam admin serve \
-    --host "${CLAUDETEAM_ADMIN_HOST:-127.0.0.1}" \
-    --port "${CLAUDETEAM_ADMIN_PORT:-8766}" \
-    >> /data/state/admin.log 2>&1 &
-fi
-
 claudeteam doctor run --json > /data/state/doctor-last.json 2> /data/state/doctor-last.err || true
 
 exec sleep infinity
