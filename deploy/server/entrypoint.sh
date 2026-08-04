@@ -27,6 +27,7 @@ auth.chmod(0o600)
 PY
 
 python /app/scripts/dev/prepare_backend_env.py --scan-root /workspace/projects || true
+claudeteam doctor run --json > /data/state/doctor-last.json 2> /data/state/doctor-last.err || true
 
 claudeteam install-hooks
 claudeteam up
@@ -44,5 +45,7 @@ if [ "${CLAUDETEAM_ADMIN_ENABLED:-1}" != "0" ]; then
     --port "${CLAUDETEAM_ADMIN_PORT:-8766}" \
     >> /data/state/admin.log 2>&1 &
 fi
+
+claudeteam doctor run --json > /data/state/doctor-last.json 2> /data/state/doctor-last.err || true
 
 exec sleep infinity

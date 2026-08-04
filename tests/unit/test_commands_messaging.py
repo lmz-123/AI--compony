@@ -6,7 +6,7 @@ contract end-to-end (without spawning a subprocess).
 from __future__ import annotations
 
 from helpers import isolated_env, run_cli
-from claudeteam.store import local_facts
+from claudeteam.store import local_facts, radio, tasks
 
 
 def test_send_writes_inbox_and_prints_local_id():
@@ -215,3 +215,33 @@ def test_read_unknown_id_returns_one():
         rc, _, err = run_cli(["read", "msg_does_not_exist"])
         assert rc == 1
         assert "no such message" in err
+
+
+def test_same_task_supplement_lands_in_radio_and_ack_marks_inbox_read():
+    with isolated_env():
+        tasks.create("worker", "do task")
+        tasks.update("T-1", status="进行中")
+        run_cli(["send", "worker", "manager", "initial dispatch", "高", "--task", "T-1", "--no-inject"])
+
+        rc, out, err = run_cli(["send", "worker", "manager", "same task supplement", "中", "--task", "T-1", "--no-inject"])
+        assert rc == 0, err
+        assert "inbox: worker ← manager" in out
+
+        updates = radio.list_updates("worker", task_id="T-1")
+        assert len(updates) == 1
+        assert updates[0]["summary"] == "same task supplement"
+
+        rc, out, err = run_cli(["radio", "ack", "worker", "--task", "T-1"])
+        assert rc == 0, err
+        assert "acked 1" in out
+        assert radio.list_updates("worker", task_id="T-1", unacked_only=True) == []
+        unread = local_facts.list_messages("worker", unread_only=True)
+        assert [m["content"] for m in unread] == ["initial dispatch"]
+
+
+def test_first_task_dispatch_does_not_create_radio_update():
+    with isolated_env():
+        tasks.create("worker", "do task")
+        tasks.update("T-1", status="进行中")
+        run_cli(["send", "worker", "manager", "initial dispatch", "高", "--task", "T-1", "--no-inject"])
+        assert radio.list_updates("worker", task_id="T-1") == []

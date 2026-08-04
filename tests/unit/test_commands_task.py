@@ -96,11 +96,19 @@ def test_task_update_can_change_auto_dispatch():
 def test_task_done_marks_completed():
     with isolated_env():
         tasks.create("w", "x")
+        tasks.update("T-1", status="进行中")
+        local_facts.append_message("w", "manager", "dispatch", task_id="T-1")
+        from claudeteam.store import radio
+        radio.append_update("w", "T-1", "msg_radio", "manager", "supplement")
         rc, out, _ = run_cli(["task", "done", "T-1"])
         assert rc == 0
         t = tasks.get("T-1")
         assert t["status"] == "已完成"
         assert t["completed_at"] is not None
+        assert not local_facts.list_messages("w", unread_only=True)
+        assert radio.agent_threads("w") == []
+        archived = radio.agent_threads("w", include_archived=True)
+        assert archived[0]["archived"] is True
 
 
 def test_task_done_notifies_manager_and_suggests_next_dispatch():

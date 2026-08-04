@@ -6,7 +6,7 @@ import json
 from helpers import attr_patch, isolated_env, run_cli
 from claudeteam.commands import admin
 from claudeteam.runtime import config, tmux
-from claudeteam.store import local_facts, tasks
+from claudeteam.store import local_facts, radio, tasks
 
 
 def test_admin_state_includes_roster_and_known_clis():
@@ -15,6 +15,7 @@ def test_admin_state_includes_roster_and_known_clis():
         assert data["roster"]["session"] == "S"
         assert data["roster"]["agents"]["manager"]["cli"] == "codex-cli"
         assert "codex-cli" in data["roster"]["known_clis"]
+        assert data["learning"]["drafts"] == 0
 
 
 def test_admin_cli_default_prints_json_state():
@@ -29,6 +30,7 @@ def test_agent_detail_includes_pane_inbox_tasks_and_logs():
     with isolated_env(team={"session": "S", "agents": {"developer": {"cli": "codex-cli"}}}):
         tasks.create("developer", "do work")
         local_facts.append_message("developer", "manager", "hello")
+        radio.append_update("developer", "T-1", "msg_1", "manager", "radio hello")
         local_facts.append_log("developer", "note", "log row")
         with attr_patch(tmux,
                         has_session=lambda session: True,
@@ -38,6 +40,8 @@ def test_agent_detail_includes_pane_inbox_tasks_and_logs():
         assert data["pane"]["text"] == "pane text"
         assert data["tasks"][0]["title"] == "do work"
         assert data["inbox"][0]["content"] == "hello"
+        assert data["radio"][0]["task_id"] == "T-1"
+        assert data["radio_updates"][0]["summary"] == "radio hello"
         assert data["logs"][0]["content"] == "log row"
 
 

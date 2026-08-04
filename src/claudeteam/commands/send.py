@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from claudeteam.agents import adapter_for_agent, identity as _identity
 from claudeteam.runtime import config, lifecycle, tmux, wake
-from claudeteam.store import local_facts
+from claudeteam.store import local_facts, tasks
 from claudeteam.util import (
     maybe_print_help, pop_bool_flag, pop_flag, reject_flag_as_agent, usage_error)
 
@@ -45,8 +45,24 @@ def main(argv: list[str]) -> int:
         if (rc := reject_flag_as_agent(name, USAGE)) is not None:
             return rc
     local_facts.touch_heartbeat(frm)
+    same_task_supplement = False
+    if task_id:
+        try:
+            active_same = any(t.get("id") == task_id for t in tasks.active_for(to))
+            prior_same_task = any(
+                m.get("task_id") == task_id for m in local_facts.list_messages(to)
+            )
+            same_task_supplement = active_same and prior_same_task
+        except Exception:
+            same_task_supplement = False
     local_id = local_facts.append_message(to, frm, message, priority=priority,
                                           task_id=task_id)
+    if same_task_supplement:
+        try:
+            from claudeteam.store import radio
+            radio.append_update(to, task_id, local_id, frm, message)
+        except Exception as e:
+            print(f"  ⚠️ radio best-effort failed for {to}/{task_id}: {e}")
     print(f"📥 inbox: {to} ← {frm}  [local_id={local_id}]")
     if no_inject:
         return 0
@@ -94,6 +110,14 @@ def main(argv: list[str]) -> int:
                 on_woken=lambda: local_facts.upsert_status(
                     to, "进行中", "responding to first message"),
             )
+        if same_task_supplement and task_id:
+            nudge = (
+                f"📻 {task_id} 有新补充（{local_id}）。"
+                f"`claudeteam radio updates {to} --task {task_id}` → "
+                f"处理后 `claudeteam radio ack {to} --task {task_id}`。"
+            )
+            tmux.inject(target, nudge, submit_keys=adapter.submit_keys())
+            return 0
         if to == "manager":
             next_step = f"`claudeteam say {to} \"...\" --to user`"
         else:

@@ -89,6 +89,24 @@ def list_messages(agent: str, *, unread_only: bool = False) -> list[dict]:
     return sorted(rows, key=lambda m: m.get("created_at", 0))
 
 
+def list_task_messages(task_id: str, *, agent: str = "",
+                       limit: int = 50) -> list[dict]:
+    """Return messages tagged with `task_id`, oldest-first.
+
+    This is for task-level learning/audit paths that need the small relevant
+    slice, not a whole-agent inbox sweep.
+    """
+    if not task_id:
+        return []
+    data = read_json(_inbox_file(), {"messages": []})
+    rows = [
+        m for m in data.get("messages", [])
+        if m.get("task_id") == task_id and (not agent or m.get("to") == agent)
+    ]
+    rows = sorted(rows, key=lambda m: m.get("created_at", 0))
+    return rows[-max(1, limit):]
+
+
 def mark_read(local_id: str) -> bool:
     with _locked():
         path = _inbox_file()

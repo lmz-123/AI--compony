@@ -16,7 +16,8 @@ from urllib.parse import parse_qs, urlparse
 from claudeteam.agents import known_clis
 from claudeteam.commands import fire, hire, monitor, restart
 from claudeteam.runtime import config, tmux
-from claudeteam.store import local_facts, tasks
+from claudeteam.runtime import paths
+from claudeteam.store import learning, local_facts, radio, tasks
 from claudeteam.util import error_exit, maybe_print_help, print_json
 
 
@@ -99,6 +100,8 @@ def _agent_detail(agent: str, *, lines: int = 160) -> dict[str, Any]:
         },
         "tasks": tasks.list_tasks(assignee=agent),
         "inbox": local_facts.list_messages(agent)[-30:],
+        "radio": radio.agent_threads(agent),
+        "radio_updates": radio.list_updates(agent, unacked_only=False, limit=30),
         "logs": local_facts.list_logs(agent, limit=80),
     }
 
@@ -106,6 +109,15 @@ def _agent_detail(agent: str, *, lines: int = 160) -> dict[str, Any]:
 def _state() -> dict[str, Any]:
     data = monitor.snapshot()
     data["roster"] = _roster()
+    data["learning"] = {
+        "drafts": len(learning.list_drafts(status="draft", limit=10_000)),
+        "recent": learning.list_drafts(limit=10),
+    }
+    doctor_path = paths.state_dir() / "doctor-last.json"
+    try:
+        data["doctor"] = json.loads(doctor_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data["doctor"] = None
     return data
 
 
@@ -224,10 +236,11 @@ def _html() -> str:
         <div><strong id="detailTitle">Select an agent</strong><div id="detailMeta" class="muted"></div></div>
         <div class="toolbar"><button onclick="restartAgent()">Restart</button><button class="danger" onclick="deleteAgent()">Delete</button></div>
       </div>
-      <div class="tabs"><button id="tabPane" class="active" onclick="showTab('pane')">Pane</button><button id="tabTasks" onclick="showTab('tasks')">Tasks</button><button id="tabInbox" onclick="showTab('inbox')">Inbox</button><button id="tabLogs" onclick="showTab('logs')">Logs</button></div>
+      <div class="tabs"><button id="tabPane" class="active" onclick="showTab('pane')">Pane</button><button id="tabTasks" onclick="showTab('tasks')">Tasks</button><button id="tabInbox" onclick="showTab('inbox')">Inbox</button><button id="tabRadio" onclick="showTab('radio')">Radio</button><button id="tabLogs" onclick="showTab('logs')">Logs</button></div>
       <pre id="pane"></pre>
       <div id="tasks" class="hidden"></div>
       <div id="inbox" class="hidden"></div>
+      <div id="radio" class="hidden"></div>
       <div id="logs" class="hidden"></div>
     </section>
     <section>
@@ -260,7 +273,9 @@ async function loadAll(){
 }
 function renderCards(){
   const q = state.queue;
-  const rows = [["Overall", state.ok ? "OK" : "Check", state.ok?"good":"bad"],["Pending", q.pending, ""],["Running", q.in_progress, ""],["Background", q.background || 0, ""],["Approval", q.needs_approval, q.needs_approval?"warn":""],["Unread", state.agents.reduce((n,a)=>n+a.unread_count,0), ""]];
+    const doctor = state.doctor ? `${state.doctor.counts.fail}/${state.doctor.counts.warn}` : "none";
+    const learning = state.learning ? state.learning.drafts : 0;
+    const rows = [["Overall", state.ok ? "OK" : "Check", state.ok?"good":"bad"],["Doctor", doctor, state.doctor && state.doctor.counts.fail ? "bad" : ""],["Learning", learning, learning ? "warn" : ""],["Pending", q.pending, ""],["Running", q.in_progress, ""],["Background", q.background || 0, ""],["Unread", state.agents.reduce((n,a)=>n+a.unread_count,0), ""]];
   $("cards").innerHTML = rows.map(x=>`<div class="metric"><div class="label">${x[0]}</div><div class="value ${x[2]}">${x[1]}</div></div>`).join("");
 }
 function renderAgents(){
@@ -274,11 +289,12 @@ async function loadDetail(name){
   $("pane").textContent = detail.pane.text || "(no pane output)";
   $("tasks").innerHTML = table(detail.tasks, ["id","status","title","created_at"]);
   $("inbox").innerHTML = table(detail.inbox, ["local_id","from","priority","task_id","read","content"]);
+  $("radio").innerHTML = table(detail.radio_updates, ["task_id","from","local_id","acked","summary"]);
   $("logs").innerHTML = table(detail.logs, ["type","ref","content"]);
   loadSelectedIntoForm();
 }
 function table(rows, keys){ if(!rows || !rows.length) return '<div class="muted">No rows</div>'; return `<table><thead><tr>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${keys.map(k=>`<td>${String(r[k] ?? "").slice(0,500)}</td>`).join("")}</tr>`).join("")}</tbody></table>`; }
-function showTab(name){ tab = name; ["pane","tasks","inbox","logs"].forEach(x=>{$(x).classList.toggle("hidden", x!==name); $("tab"+x[0].toUpperCase()+x.slice(1)).classList.toggle("active", x===name);}); }
+function showTab(name){ tab = name; ["pane","tasks","inbox","radio","logs"].forEach(x=>{$(x).classList.toggle("hidden", x!==name); $("tab"+x[0].toUpperCase()+x.slice(1)).classList.toggle("active", x===name);}); }
 function fillCliOptions(){ const opts = state.roster.known_clis.map(c=>`<option value="${c}">${c}</option>`).join(""); if($("fCli").innerHTML !== opts) $("fCli").innerHTML = opts; }
 function loadSelectedIntoForm(){
   const cfg = detail ? detail.config : {};

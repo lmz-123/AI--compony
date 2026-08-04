@@ -387,6 +387,28 @@ cp templates/ai-company/ops.md team-data/ops.md
 
 # 10. 查看不同 agent 的状态
 
+## 10.0 运行环境体检
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam doctor run
+docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam doctor run --json
+docker compose -f deploy/server/compose.yaml exec -T claudeteam cat /data/state/doctor-last.json
+```
+
+作用：
+
+- 检查 `chat_id`、team roster、密钥是否可见
+- 检查 `/workspace/projects`、TripCanvas 后端 `.venv` 预热状态
+- 检查 `/root/.ssh`、部署私钥、`known_hosts`
+- 检查 `/data/artifacts`、router/watchdog、8765/8766/8081 端口
+- 给出明确 action，避免 agent 为环境问题反复重试
+
+如果只是想准备后端开发环境，可以运行：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam doctor run --fix
+```
+
 ## 10.1 总览状态
 
 ```bash
@@ -531,6 +553,87 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam statu
 
 ```bash
 docker compose -f deploy/server/compose.yaml exec -T claudeteam claudeteam peek manager 120
+```
+
+---
+
+## 12.4 查看当前任务的补充消息（radio）
+
+当 worker 正在处理某个 `T-n`，manager 或后端再发同一个 `T-n` 的补充时，会进入 radio。worker 只需要看当前任务 radio，不需要读取整段 inbox。
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam radio updates developer --task T-33
+```
+
+确认已处理后：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam radio ack developer --task T-33
+```
+
+作用：
+
+- 减少同一任务补充消息污染 worker 上下文
+- 避免 worker 为了找一条补充而读取全部历史 inbox
+- 任务完成/取消时后端自动封箱，不需要人工清理
+
+---
+
+## 12.5 查看和提升任务经验草稿（learn）
+
+任务进入终态后，系统会尝试生成经验草稿。草稿只是待审知识，不会自动污染正式 memory / skill。
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn list
+```
+
+作用：
+
+- 查看最近的 `L-n` 经验草稿
+- 看它建议属于 manager / developer / deployer / ops 里的哪一层
+
+查看某条草稿和证据：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn get L-1
+```
+
+确认有价值后，提升到某个 agent 的长期记忆：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn promote L-1 --agent deployer
+```
+
+确认是全队硬规则后，提升到团队经验：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn promote L-1 --team
+```
+
+只有非常稳定、所有 agent 都必须知道的规则，才加 `--pin`：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn promote L-1 --team --pin
+```
+
+生成 skill 草稿，但不直接改正式 skill：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn skill-draft L-1 --skill deploy-tripcanvas
+```
+
+草稿位置：
+
+```text
+/data/state/learn/skill-drafts/
 ```
 
 ---

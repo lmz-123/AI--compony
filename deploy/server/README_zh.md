@@ -225,6 +225,52 @@ docker compose -f deploy/server/compose.yaml exec -T claudeteam \
 - 跑完后自动把结果回推给 `manager`
 - 不需要 deployer 持续盯着 subprocess
 
+## 当前任务补充消息（radio）
+
+AI Company 内置轻量 `radio` 机制：当某个 worker 已经在处理 `T-n`，同一个 `T-n` 又收到补充说明时，系统会把补充写入当前任务的 radio，而不是要求 worker 扫整段 inbox。
+
+常用命令：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam radio updates developer --task T-XX
+
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam radio ack developer --task T-XX
+```
+
+任务完成或取消时，后端会自动封箱对应 `T-n` 的 radio，避免旧补充在下次唤醒时再次进入上下文。
+
+## 任务经验沉淀（learn）
+
+AI Company 内置轻量 `learn` 机制：任务完成或取消后，后端会尝试把相关 task、inbox、log、memory 证据提炼成一条可审阅的经验草稿。草稿不会自动写入正式 skill，也不会自动塞进所有 agent 上下文。
+
+常用命令：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn list
+
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn get L-1
+
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn promote L-1 --agent deployer
+
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn promote L-1 --team --pin
+
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam learn skill-draft L-1 --skill deploy-tripcanvas
+```
+
+推荐规则：
+
+- 普通执行经验提升到对应 worker 的 memory。
+- 跨角色硬规则才提升到 team experience。
+- 只有高稳定、低争议、频繁复用的团队规则才 `--pin`。
+- 复杂流程先生成 skill draft，人工确认后再复制进正式 `skills/<name>/SKILL.md`。
+
 正式 release 还需要在 `lmz-123/MyAPPs` 的 GitHub Actions secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_STORE_PASSWORD`，完成一次独立签名验证后再把 `allow_release` 改为 `true`。
 
 ## 只读监控页面
@@ -285,6 +331,41 @@ ssh -L 8766:127.0.0.1:8766 root@你的服务器IP
 ```
 
 然后本机浏览器访问 `http://127.0.0.1:8766/`。
+
+## 环境体检 Doctor
+
+AI Company 内置 `doctor`，用于把常见环境问题前置成结构化检查，减少 agent 为依赖、端口、SSH、产物目录等问题反复试错。
+
+手动运行：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam doctor run
+```
+
+机器可读结果：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam doctor run --json
+```
+
+带轻量修复的运行方式：
+
+```bash
+docker compose -f deploy/server/compose.yaml exec -T claudeteam \
+  claudeteam doctor run --fix
+```
+
+`--fix` 当前只会复用固定预热脚本准备 `/workspace/projects` 下的 TripCanvas 后端虚拟环境，不会改生产、不会部署、不会删除文件。
+
+容器启动时会自动跑一次体检，并把最后一次结果写到：
+
+```text
+/data/state/doctor-last.json
+```
+
+管理台会读取这份结果，在总览卡片里显示 `Doctor fail/warn`。
 
 ## 启动与验证
 

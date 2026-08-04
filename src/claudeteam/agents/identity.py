@@ -66,6 +66,15 @@ Shared facts: add `--team --pin` only for a small number of team-wide hard facts
 otherwise pull with `claudeteam recall --team --grep <keyword>` when needed."""
 
 
+_LEARNING_POLICY = """\
+## Learning drafts
+
+Task completion may create reviewable learning drafts automatically. Use
+`claudeteam learn list` / `learn get <L-id>` to inspect them. Promote only useful,
+stable lessons with `claudeteam learn promote <L-id> --agent <agent>` or
+`--team`; do not preserve raw chat/log history as memory."""
+
+
 # Team working principles every agent is born with. Shared (like
 # _WORKDIR_RULE) so manager + worker stay in sync, and injected into the
 # identity body — which means it reaches every CLI via identity.md AND
@@ -158,6 +167,8 @@ Pick up tasks only from your inbox / current task anchor.
 
 ```bash
 claudeteam inbox {name}
+claudeteam radio updates {name} --task <T-id>
+claudeteam radio ack {name} --task <T-id>
 claudeteam read <local_id>
 claudeteam status {name} 进行中 "<task>"
 claudeteam send manager {name} "<update>"
@@ -173,6 +184,7 @@ Use `claudeteam <command> --help` for details.
 
 - Treat one T-n as your only active work context.
 - Read only the current dispatch, same-T-n supplements, and this task's recent result/evidence.
+- If you are nudged with 📻, use `claudeteam radio updates {name} --task <T-id>` instead of sweeping the whole inbox; ack radio after handling it.
 - Leave different-T-n messages unread while busy; tell manager you are busy.
 - After completion, close the task and do not carry old details into the next task unless manager explicitly links them.
 
@@ -494,6 +506,7 @@ def native_memory_text(agent: str, *, role: str | None = None,
     if anchor:
         parts.append(anchor)
     parts.append(_MEMORY_POLICY)
+    parts.append(_LEARNING_POLICY)
     recall = memory.render_for_prompt(agent)
     if recall:
         parts.append(recall)

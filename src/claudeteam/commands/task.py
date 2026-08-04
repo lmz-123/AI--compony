@@ -163,11 +163,23 @@ def _seal_if_terminal(t: dict | None) -> None:
     Terminal status already removes a task from the active identity anchor.
     Clearing unread inbox rows for the same T-n prevents stale dispatches or
     supplements from being re-read as fresh context on the next wake.
+    Also creates a reviewable learning draft, so useful experience can be
+    promoted deliberately instead of keeping raw chat/log history alive.
     """
     if not t or t.get("status") not in tasks.TERMINAL_STATUSES:
         return
     try:
         local_facts.mark_task_read(t.get("id", ""), agent=t.get("assignee", ""))
+    except Exception:
+        pass
+    try:
+        from claudeteam.store import radio
+        radio.seal_task(t.get("assignee", ""), t.get("id", ""))
+    except Exception:
+        pass
+    try:
+        from claudeteam.store import learning
+        learning.create_from_task(t.get("id", ""), by="task-seal")
     except Exception:
         pass
 
