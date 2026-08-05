@@ -20,6 +20,11 @@
 # requires-python = ">=3.10" stays compatible.
 FROM python:3.12-slim
 
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' /etc/apt/sources.list.d/debian.sources; \
+      sed -i 's|http://security.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
+    fi
+
 # Pin apt index once; install in one layer to keep the image lean.
 # `curl` is required by @larksuite/cli's postinstall script (downloads
 # a platform-specific binary blob); slim image doesn't ship it.
@@ -46,8 +51,9 @@ RUN apt-get update \
 # instead (provides node + npm; the other npm-global CLIs run fine on 22).
 ARG NODE_VERSION=22.23.1
 ARG TARGETARCH
+ARG NODE_DIST_MIRROR=https://npmmirror.com/mirrors/node
 RUN ARCH="$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64)" \
-    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${ARCH}.tar.xz" -o /tmp/node.tar.xz \
+    && curl -fsSL "${NODE_DIST_MIRROR}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${ARCH}.tar.xz" -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm /tmp/node.tar.xz \
     && node --version && npm --version
@@ -58,6 +64,8 @@ RUN ARCH="$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64)" \
 # /proc-direct fallbacks added for `_host_cpu` / `_host_mem`, but `ps`
 # is the cleanest path for per-pid CPU% (kernel-computed, no two-
 # snapshot delta required).
+
+RUN npm config set registry https://registry.npmmirror.com
 
 # Pre-install lark-cli at build time so the first `claudeteam router`
 # invocation doesn't have to fetch+install ~600 deps on cold start.
@@ -95,7 +103,7 @@ RUN mkdir -p /root/.claude \
 #   - kimi auth:  ~/.kimi/credentials/<cli>.json
 RUN npm install --silent --global @openai/codex \
     && codex --version
-RUN pip install --no-cache-dir kimi-cli \
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple kimi-cli \
     && kimi --version
 
 # Install `uv` to pull `codex-cli-usage` — the only path to real
