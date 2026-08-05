@@ -2,8 +2,7 @@
 # Keep this image deliberately small: all three agents use Codex, so installing
 # Claude/Kimi/MiniMax/Trae and their transitive dependencies only makes server
 # builds slower and less reliable.
-ARG DOCKER_IMAGE_PREFIX=
-FROM ${DOCKER_IMAGE_PREFIX}python:3.12-slim
+FROM python:3.12-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

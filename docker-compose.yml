@@ -17,10 +17,7 @@
 
 services:
   claudeteam:
-    build:
-      context: .
-      args:
-        DOCKER_IMAGE_PREFIX: ${DOCKER_IMAGE_PREFIX:-}
+    build: .
     image: claudeteam:dev
     # tini as PID 1 reaps orphaned <defunct> lark-cli/claudeteam zombies
     # left by router self-respawn churn (macOS WS silent-drop loop).

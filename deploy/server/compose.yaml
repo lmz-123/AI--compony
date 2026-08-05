@@ -3,8 +3,6 @@ services:
     build:
       context: ../..
       dockerfile: deploy/server/Dockerfile
-      args:
-        DOCKER_IMAGE_PREFIX: ${DOCKER_IMAGE_PREFIX:-}
     image: ai-company:local
     init: true
     restart: unless-stopped
