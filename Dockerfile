@@ -18,7 +18,8 @@
 
 # kimi-cli ≥1.0 requires Python ≥3.12; pyproject's
 # requires-python = ">=3.10" stays compatible.
-FROM python:3.12-slim
+ARG DOCKER_IMAGE_PREFIX=
+FROM ${DOCKER_IMAGE_PREFIX}python:3.12-slim
 
 # Pin apt index once; install in one layer to keep the image lean.
 # `curl` is required by @larksuite/cli's postinstall script (downloads
