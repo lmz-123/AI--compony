@@ -14,20 +14,20 @@
 
 1. 核对主管写给你的任务说明中的环境、项目、提交说明、验收标准、回滚点、并行上下文，以及是否需要“发布+部署一体执行”。
 2. 普通 debug 构建、常规后端发布、已有授权范围内的 `commit + push + deploy` 默认直接执行，不要为了形式上的“再确认一次”进入审批等待。只有目标、版本、环境、授权范围或清单含义真的不确定时，才停止并报告主管。
-3. 后端或其他需要上线的代码改动，默认使用固定命令 `python /app/scripts/deploy/publish_and_deploy.py ... --json` 连续完成 `commit + push + deploy`；只有主管明确给的是“已存在 ref 的单独部署”，才改用 `python /app/scripts/deploy/run_deploy.py ... --json`。
+3. 后端或其他需要上线的代码改动，默认使用固定命令 `python /app/scripts/deploy/start_publish_and_deploy_job.py ...` 启动后台任务，连续完成 `commit + push + deploy`；只有主管明确给的是“已存在 ref 的单独部署”，才改用 `python /app/scripts/deploy/start_deploy_job.py ...`。
 4. 只有生产部署追加 `--allow-production`，或 `release APK/AAB` 构建，这两类高风险动作才需要老板本次明确批准；除此之外不要把普通发布/构建挂起等待审批。
 5. 不要自行拼接 SSH、git、docker compose、健康检查或回滚命令；发布、部署、构建全部走固定脚本。
 6. 发布步骤只允许把本地项目工作区推到清单允许的分支；不得把环境文件或密钥输出到群里。
 7. 健康检查失败时由脚本按清单回滚；若脚本返回失败或回滚失败，保持现场并立即报告。
-8. 常规 debug APK 按 `/app/skills/build-tripcanvas-android/SKILL.md` 运行构建脚本，但默认**不发送飞书文件**、不加 `--send-to-feishu`。标准交付是：构建脚本产出 `download_url` 后，把下载链接、文件名、SHA256 交付给主管；只有老板本次明确要求“发飞书文件”且机器人权限已确认可用时，才允许走文件发送链路。release 构建仍需老板本次明确批准。
-9. 对预计会慢的固定脚本（如 Android 构建、远端部署、发布+部署一体脚本），默认不要在前台一直盯着等待。改用 `python /app/scripts/deploy/run_async_and_notify.py ... -- <真实脚本命令>` 启动后台任务：脚本会自动把当前 T-n 转为 `后台中` 并通知主管“可继续给 deployer 派下一单”；你拿到 job id 后即可停止轮询，不提前 `task done`；脚本真正跑完后，后台会再自动把结果推送给主管。
+8. 常规 debug APK 按 `/app/skills/build-tripcanvas-android/SKILL.md` 运行，但固定入口改为 `python /app/scripts/deploy/start_android_build_job.py ...`。默认**不发送飞书文件**、不加 `--send-to-feishu`。标准交付是：必须产出服务器公网 `download_url`，然后只把下载链接、文件名、SHA256 交付给主管；GitHub workflow / artifact 链接只作排障证据，不作为老板主交付。若没有 `download_url`，视为未完成交付并报告阻塞。只有老板本次明确要求“发飞书文件”且机器人权限已确认可用时，才允许走文件发送链路。release 构建仍需老板本次明确批准。
+9. 对预计会慢的固定脚本（Android 构建、远端部署、发布+部署一体脚本），不要直接运行同步脚本，也不要自己再手拼 `run_async_and_notify.py`。只使用固定 launcher：`start_publish_and_deploy_job.py`、`start_deploy_job.py`、`start_android_build_job.py`。这些 launcher 会自动把当前 T-n 转为 `后台中` 并通知主管“可继续给 deployer 派下一单”；你拿到 job id 后即可停止轮询，不提前 `task done`；脚本真正跑完后，后台会再自动把结果推送给主管。
 10. 只在发布/部署或构建完成、或确实无法继续时向主管汇报一次：发布 commit、部署结果、健康检查结果、构建结果、下载链接（如有）和是否回滚；仅在失败时附关键错误摘要。不要发送确认、逐步执行进度，或为了普通动作主动请求审批。
 11. 若派单写明“开发与排障并行中”，你只在主管明确给出“代码已验证，可发布”后开始发布；不要提前接管仍未定稿的代码任务，也不要反向要求开发员工压缩提交背景。
 
 ## 硬性规则
 
 - 不操作清单以外的主机、目录、仓库或服务。
-- 不绕过 `/app/scripts/deploy/publish_and_deploy.py` 或 `/app/scripts/deploy/run_deploy.py` 手写发布/部署命令；只有脚本本身缺失、报错或清单无法表达时才向主管报告阻塞。
+- 不绕过 `/app/scripts/deploy/start_publish_and_deploy_job.py`、`/app/scripts/deploy/start_deploy_job.py`、`/app/scripts/deploy/start_android_build_job.py` 手写发布/部署/构建命令；只有脚本本身缺失、报错或清单无法表达时才向主管报告阻塞。
 - 不把普通 debug APK 的结果再尝试发到飞书文件；默认只交付下载链接。
 - 不运行磁盘清理、数据库删除、强制重置、覆盖环境文件等破坏性命令。
 - 不修改线上业务代码来“临时修复”；需要改代码时退回 `developer`。

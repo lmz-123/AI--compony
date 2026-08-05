@@ -157,6 +157,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=2400)
     parser.add_argument("--poll-seconds", type=int, default=10)
     parser.add_argument("--send-to-feishu", action="store_true")
+    parser.add_argument("--require-download-url", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -353,12 +354,18 @@ def main() -> int:
             if result.returncode != 0:
                 raise BuildError(f"Build succeeded but Feishu delivery failed; artifact kept at {package_path}")
 
+        download_url = build_download_url(config, request_id, package_path.name)
+        if args.require_download_url and not download_url:
+            raise BuildError(
+                "Build succeeded but server download_url is unavailable; "
+                "set artifact_public_base_url and expose artifact_dir over HTTP(S)")
+
         summary = {
             "workflow_url": run.get("html_url"),
             "commit": manifest.get("commit"),
             "version": manifest.get("version"),
             "file": str(package_path),
-            "download_url": build_download_url(config, request_id, package_path.name),
+            "download_url": download_url,
             "size_bytes": package_path.stat().st_size,
             "sha256": manifest.get("sha256"),
             "build_type": manifest.get("build_type"),

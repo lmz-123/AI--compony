@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from scripts.deploy.run_deploy import (  # type: ignore
     DEFAULT_CONFIG_PATH,
@@ -32,16 +34,73 @@ IGNORED_STATUS_SUFFIXES = (
 )
 
 
-def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=False)
+DEPLOYER_SSH_KEY = Path("/root/.ssh/deployer_ed25519")
 
 
-def _git_output(cmd: list[str], cwd: Path) -> str:
-    proc = _run(cmd, cwd)
+def _run(cmd: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=False, env=env)
+
+
+def _git_output(cmd: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> str:
+    proc = _run(cmd, cwd, env=env)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip() or "git command failed"
         raise DeployError(detail)
     return proc.stdout.strip()
+
+
+def _git_remote_host(remote: str) -> str:
+    remote = remote.strip()
+    if remote.startswith("git@"):
+        tail = remote.split("@", 1)[1]
+        return tail.split(":", 1)[0].strip().lower()
+    if remote.startswith("ssh://"):
+        return (urlparse(remote).hostname or "").strip().lower()
+    return ""
+
+
+def _known_hosts_path() -> Path:
+    state_dir = Path(os.environ.get("CLAUDETEAM_STATE_DIR", "/data/state"))
+    agent = (os.environ.get("CODEX_AGENT") or "deployer").strip() or "deployer"
+    return state_dir / "agents" / agent / "workspace" / "known_hosts"
+
+
+def _ensure_github_known_hosts(path: Path) -> None:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if "github.com " in existing:
+        return
+    proc = subprocess.run(
+        ["ssh-keyscan", "github.com"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        detail = (proc.stderr or proc.stdout).strip() or "ssh-keyscan github.com failed"
+        raise DeployError(detail)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(proc.stdout)
+
+
+def _git_runtime_env(cwd: Path) -> dict[str, str] | None:
+    remote = _git_output(["git", "config", "--get", "remote.origin.url"], cwd)
+    if _git_remote_host(remote) != "github.com":
+        return None
+    if not DEPLOYER_SSH_KEY.is_file():
+        raise DeployError(f"Required deployer SSH key is missing: {DEPLOYER_SSH_KEY}")
+    known_hosts = _known_hosts_path()
+    _ensure_github_known_hosts(known_hosts)
+    env = os.environ.copy()
+    env["GIT_SSH_COMMAND"] = (
+        f"ssh -i {DEPLOYER_SSH_KEY} "
+        f"-o IdentitiesOnly=yes "
+        f"-o StrictHostKeyChecking=yes "
+        f"-o UserKnownHostsFile={known_hosts}"
+    )
+    return env
 
 
 def _projects_root(data: dict[str, Any], config_path: Path) -> Path:
@@ -63,20 +122,20 @@ def _local_project_root(projects_root: Path, project_name: str, local_directory:
     return root
 
 
-def _ensure_branch(cwd: Path, branch: str) -> None:
-    current = _git_output(["git", "branch", "--show-current"], cwd)
+def _ensure_branch(cwd: Path, branch: str, *, env: dict[str, str] | None = None) -> None:
+    current = _git_output(["git", "branch", "--show-current"], cwd, env=env)
     if current == branch:
         return
     if not current:
         return
-    proc = _run(["git", "checkout", branch], cwd)
+    proc = _run(["git", "checkout", branch], cwd, env=env)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip() or f"cannot checkout {branch}"
         raise DeployError(detail)
 
 
-def _worktree_status(cwd: Path) -> str:
-    return _git_output(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd)
+def _worktree_status(cwd: Path, *, env: dict[str, str] | None = None) -> str:
+    return _git_output(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd, env=env)
 
 
 def _status_path(line: str) -> str:
@@ -97,34 +156,35 @@ def _effective_status(status: str) -> str:
     return "\n".join(line for line in lines if not _is_ignored_runtime_status(line))
 
 
-def _fetch_branch(cwd: Path, branch: str) -> None:
-    proc = _run(["git", "fetch", "origin", branch, "--prune"], cwd)
+def _fetch_branch(cwd: Path, branch: str, *, env: dict[str, str] | None = None) -> None:
+    proc = _run(["git", "fetch", "origin", branch, "--prune"], cwd, env=env)
     if proc.returncode != 0:
         raise DeployError((proc.stderr or proc.stdout).strip() or "git fetch failed")
 
 
-def _sync_with_remote(cwd: Path, branch: str) -> str:
-    _fetch_branch(cwd, branch)
-    current = _git_output(["git", "branch", "--show-current"], cwd)
+def _sync_with_remote(cwd: Path, branch: str, *, env: dict[str, str] | None = None) -> str:
+    _fetch_branch(cwd, branch, env=env)
+    current = _git_output(["git", "branch", "--show-current"], cwd, env=env)
     if not current:
-        proc = _run(["git", "rebase", "--autostash", f"origin/{branch}"], cwd)
+        proc = _run(["git", "rebase", "--autostash", f"origin/{branch}"], cwd, env=env)
         if proc.returncode != 0:
             raise DeployError((proc.stderr or proc.stdout).strip() or "git rebase failed")
         return "detached-rebased"
-    proc = _run(["git", "pull", "--rebase", "--autostash", "origin", branch], cwd)
+    proc = _run(["git", "pull", "--rebase", "--autostash", "origin", branch], cwd, env=env)
     if proc.returncode != 0:
         raise DeployError((proc.stderr or proc.stdout).strip() or "git pull --rebase failed")
     return "rebased"
 
 
 def _publish_local_changes(cwd: Path, branch: str, message: str) -> dict[str, Any]:
-    _ensure_branch(cwd, branch)
-    sync_summary = _sync_with_remote(cwd, branch)
-    status_before = _worktree_status(cwd)
+    git_env = _git_runtime_env(cwd)
+    _ensure_branch(cwd, branch, env=git_env)
+    sync_summary = _sync_with_remote(cwd, branch, env=git_env)
+    status_before = _worktree_status(cwd, env=git_env)
     effective_status = _effective_status(status_before)
     if not effective_status:
-        pushed_ref = _git_output(["git", "rev-parse", "HEAD"], cwd)
-        push_proc = _run(["git", "push", "origin", f"HEAD:{branch}"], cwd)
+        pushed_ref = _git_output(["git", "rev-parse", "HEAD"], cwd, env=git_env)
+        push_proc = _run(["git", "push", "origin", f"HEAD:{branch}"], cwd, env=git_env)
         if push_proc.returncode != 0:
             raise DeployError((push_proc.stderr or push_proc.stdout).strip() or "git push failed")
         return {
@@ -135,21 +195,21 @@ def _publish_local_changes(cwd: Path, branch: str, message: str) -> dict[str, An
             "sync_summary": sync_summary,
         }
 
-    add_proc = _run(["git", "add", "-A", "--", "."], cwd)
+    add_proc = _run(["git", "add", "-A", "--", "."], cwd, env=git_env)
     if add_proc.returncode != 0:
         raise DeployError((add_proc.stderr or add_proc.stdout).strip() or "git add failed")
     for line in status_before.splitlines():
         if _is_ignored_runtime_status(line):
-            restore_proc = _run(["git", "restore", "--staged", "--", _status_path(line)], cwd)
+            restore_proc = _run(["git", "restore", "--staged", "--", _status_path(line)], cwd, env=git_env)
             if restore_proc.returncode != 0:
                 raise DeployError((restore_proc.stderr or restore_proc.stdout).strip() or "git restore --staged failed")
 
-    commit_proc = _run(["git", "commit", "-m", message], cwd)
+    commit_proc = _run(["git", "commit", "-m", message], cwd, env=git_env)
     if commit_proc.returncode != 0:
         raise DeployError((commit_proc.stderr or commit_proc.stdout).strip() or "git commit failed")
 
-    pushed_ref = _git_output(["git", "rev-parse", "HEAD"], cwd)
-    push_proc = _run(["git", "push", "origin", f"HEAD:{branch}"], cwd)
+    pushed_ref = _git_output(["git", "rev-parse", "HEAD"], cwd, env=git_env)
+    push_proc = _run(["git", "push", "origin", f"HEAD:{branch}"], cwd, env=git_env)
     if push_proc.returncode != 0:
         raise DeployError((push_proc.stderr or push_proc.stdout).strip() or "git push failed")
 

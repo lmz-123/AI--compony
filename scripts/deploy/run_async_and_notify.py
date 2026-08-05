@@ -88,7 +88,7 @@ def _summarize_payload(payload: dict[str, Any] | None, *, rc: int, log_path: Pat
             parts.append(f"文件：{Path(str(r['file'])).name}")
         if r.get("sha256"):
             parts.append(f"SHA256={r['sha256']}")
-        if r.get("workflow_url"):
+        if r.get("workflow_url") and not r.get("download_url"):
             parts.append(f"workflow={r['workflow_url']}")
         parts.append(f"日志：{log_path}")
         return "；".join(parts)

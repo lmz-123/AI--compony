@@ -11,7 +11,7 @@ For ordinary debug APK work, the short path is:
 
 1. Use configured defaults from `/data/build-targets.toml`
 2. Run the build script without `--send-to-feishu`
-3. Return only `download_url`, filename, SHA256, and workflow URL to `manager`
+3. Return the server `download_url`, filename, and SHA256 to `manager`; workflow URL is only auxiliary evidence
 
 Only read the rest of this file when:
 
@@ -61,7 +61,7 @@ python /app/skills/build-tripcanvas-android/scripts/build_android.py \
 
 Use the real URL from `/data/build-targets.toml` or the manager's task. Never copy the example URL.
 
-5. Default delivery path: give `manager` the returned `download_url`, filename, SHA256, and workflow URL. Do **not** add `--send-to-feishu` for ordinary debug APK work.
+5. Default delivery path: give `manager` the returned server `download_url`, filename, and SHA256. Workflow URL is only auxiliary evidence for troubleshooting, not the primary handoff. Do **not** add `--send-to-feishu` for ordinary debug APK work.
 
 6. Only when the user explicitly asks to send the file to Feishu, and robot file-upload permissions are already confirmed working, append:
 
@@ -93,7 +93,7 @@ the runner will emit both:
 - local `file` path for retained server artifact storage
 - public `download_url` for manager/user delivery
 
-The server must expose `artifact_dir` read-only at that URL path. For ordinary debug APKs, this `download_url` is the primary handoff artifact.
+The server must expose `artifact_dir` read-only at that URL path. For ordinary debug APKs, this `download_url` is the primary handoff artifact. If `download_url` cannot be produced, treat the build as not yet deliverable to the boss; do not fall back to GitHub artifact links as the main delivery path.
 
 ## Failure Handoff
 
